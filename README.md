@@ -1,7 +1,12 @@
 # EAGLERCRAFT 1.16.4
 
-Run Eaglercraft 1.16.4 On web!
-Current WIP
-I tried to make Eaglercraft 1.21.9 first but that was too hard so i made this :P :D
+Run Eaglercraft 1.16.4 On web!  
+Current WIP  
+
+This wasn't made by lax1dude. stop having assumptions Mojang/Microsoft
+  ## Directions
+  1. Download the source code (Code > Download)
+  2. Unpack the files
+  3. Open the HTML file!
 
 Created by Vegeta-Bles

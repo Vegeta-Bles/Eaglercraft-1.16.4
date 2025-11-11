@@ -1,0 +1,120 @@
+buildscript {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.teavm:teavm-gradle-plugin:0.13.0'
+    }
+}
+
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'java'
+    id 'application'
+}
+
+apply plugin: 'org.teavm'
+
+group = 'com.eaglercraft'
+version = '1.16.4-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'net.minecraft.client.main.Main'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 11
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir('decompiled')
+            exclude('META-INF/**')
+        }
+        resources {
+            srcDir('decompiled')
+            exclude('**/*.java')
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    exclusiveContent {
+        forRepository {
+            maven { url = uri('https://bmclapi2.bangbang93.com/maven/') }
+        }
+        filter {
+            includeGroup 'com.mojang'
+            includeModule 'oshi-project', 'oshi-core'
+            includeModule 'net.java.jinput', 'jinput'
+            includeModule 'net.java.jutils', 'jutils'
+            includeModule 'org.lwjgl', 'lwjgl'
+            includeModule 'org.lwjgl', 'lwjgl-jemalloc'
+            includeModule 'org.lwjgl', 'lwjgl-openal'
+            includeModule 'org.lwjgl', 'lwjgl-opengl'
+            includeModule 'org.lwjgl', 'lwjgl-glfw'
+            includeModule 'org.lwjgl', 'lwjgl-stb'
+            includeModule 'org.lwjgl', 'lwjgl-tinyfd'
+        }
+    }
+}
+
+def versionManifest = file('1.16.4.json')
+def mcLibraries = []
+
+if (versionManifest.exists()) {
+    def manifest = new JsonSlurper().parse(versionManifest)
+    mcLibraries = manifest.libraries.findAll { lib ->
+        def artifact = lib.downloads?.artifact
+        artifact != null && !lib.containsKey('natives')
+    }.collect { it.name }
+}
+
+dependencies {
+    // Core Minecraft dependency graph from 1.16.4 manifest
+    mcLibraries.each { depNotation ->
+        implementation depNotation
+    }
+
+    // Ensure logging is always available even before the libraries resolve
+    implementation 'org.apache.logging.log4j:log4j-api:2.8.1'
+    implementation 'org.apache.logging.log4j:log4j-core:2.8.1'
+}
+
+// Produce TeaVM outputs (JS for now) into build/teavm
+teavm {
+    all {
+        mainClass.set(application.mainClass)
+        debugInformation.set(true)
+        fastGlobalAnalysis.set(false)
+        outputDir.set(layout.buildDirectory.dir('teavm'))
+        properties.put('java.awt.headless', 'true')
+        properties.put('minecraft.applet', 'true')
+    }
+
+    js {
+        obfuscated.set(false)
+        sourceMap.set(true)
+        entryPointName.set('eaglerMain')
+    }
+}
+
+tasks.register('printMinecraftDeps') {
+    group = 'help'
+    description = 'Prints the dependency coordinates pulled from the 1.16.4 manifest.'
+    doLast {
+        println 'Minecraft libraries wired into Gradle:'
+        mcLibraries.each { println " - ${it}" }
+    }
+}

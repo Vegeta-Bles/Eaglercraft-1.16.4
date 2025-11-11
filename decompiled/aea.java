@@ -1,0 +1,96 @@
+public class aea {
+   public static final adz<buo> a = a("mined", gm.Q);
+   public static final adz<blx> b = a("crafted", gm.T);
+   public static final adz<blx> c = a("used", gm.T);
+   public static final adz<blx> d = a("broken", gm.T);
+   public static final adz<blx> e = a("picked_up", gm.T);
+   public static final adz<blx> f = a("dropped", gm.T);
+   public static final adz<aqe<?>> g = a("killed", gm.S);
+   public static final adz<aqe<?>> h = a("killed_by", gm.S);
+   public static final adz<vk> i = a("custom", gm.Y);
+   public static final vk j = a("leave_game", ady.b);
+   public static final vk k = a("play_one_minute", ady.e);
+   public static final vk l = a("time_since_death", ady.e);
+   public static final vk m = a("time_since_rest", ady.e);
+   public static final vk n = a("sneak_time", ady.e);
+   public static final vk o = a("walk_one_cm", ady.d);
+   public static final vk p = a("crouch_one_cm", ady.d);
+   public static final vk q = a("sprint_one_cm", ady.d);
+   public static final vk r = a("walk_on_water_one_cm", ady.d);
+   public static final vk s = a("fall_one_cm", ady.d);
+   public static final vk t = a("climb_one_cm", ady.d);
+   public static final vk u = a("fly_one_cm", ady.d);
+   public static final vk v = a("walk_under_water_one_cm", ady.d);
+   public static final vk w = a("minecart_one_cm", ady.d);
+   public static final vk x = a("boat_one_cm", ady.d);
+   public static final vk y = a("pig_one_cm", ady.d);
+   public static final vk z = a("horse_one_cm", ady.d);
+   public static final vk A = a("aviate_one_cm", ady.d);
+   public static final vk B = a("swim_one_cm", ady.d);
+   public static final vk C = a("strider_one_cm", ady.d);
+   public static final vk D = a("jump", ady.b);
+   public static final vk E = a("drop", ady.b);
+   public static final vk F = a("damage_dealt", ady.c);
+   public static final vk G = a("damage_dealt_absorbed", ady.c);
+   public static final vk H = a("damage_dealt_resisted", ady.c);
+   public static final vk I = a("damage_taken", ady.c);
+   public static final vk J = a("damage_blocked_by_shield", ady.c);
+   public static final vk K = a("damage_absorbed", ady.c);
+   public static final vk L = a("damage_resisted", ady.c);
+   public static final vk M = a("deaths", ady.b);
+   public static final vk N = a("mob_kills", ady.b);
+   public static final vk O = a("animals_bred", ady.b);
+   public static final vk P = a("player_kills", ady.b);
+   public static final vk Q = a("fish_caught", ady.b);
+   public static final vk R = a("talked_to_villager", ady.b);
+   public static final vk S = a("traded_with_villager", ady.b);
+   public static final vk T = a("eat_cake_slice", ady.b);
+   public static final vk U = a("fill_cauldron", ady.b);
+   public static final vk V = a("use_cauldron", ady.b);
+   public static final vk W = a("clean_armor", ady.b);
+   public static final vk X = a("clean_banner", ady.b);
+   public static final vk Y = a("clean_shulker_box", ady.b);
+   public static final vk Z = a("interact_with_brewingstand", ady.b);
+   public static final vk aa = a("interact_with_beacon", ady.b);
+   public static final vk ab = a("inspect_dropper", ady.b);
+   public static final vk ac = a("inspect_hopper", ady.b);
+   public static final vk ad = a("inspect_dispenser", ady.b);
+   public static final vk ae = a("play_noteblock", ady.b);
+   public static final vk af = a("tune_noteblock", ady.b);
+   public static final vk ag = a("pot_flower", ady.b);
+   public static final vk ah = a("trigger_trapped_chest", ady.b);
+   public static final vk ai = a("open_enderchest", ady.b);
+   public static final vk aj = a("enchant_item", ady.b);
+   public static final vk ak = a("play_record", ady.b);
+   public static final vk al = a("interact_with_furnace", ady.b);
+   public static final vk am = a("interact_with_crafting_table", ady.b);
+   public static final vk an = a("open_chest", ady.b);
+   public static final vk ao = a("sleep_in_bed", ady.b);
+   public static final vk ap = a("open_shulker_box", ady.b);
+   public static final vk aq = a("open_barrel", ady.b);
+   public static final vk ar = a("interact_with_blast_furnace", ady.b);
+   public static final vk as = a("interact_with_smoker", ady.b);
+   public static final vk at = a("interact_with_lectern", ady.b);
+   public static final vk au = a("interact_with_campfire", ady.b);
+   public static final vk av = a("interact_with_cartography_table", ady.b);
+   public static final vk aw = a("interact_with_loom", ady.b);
+   public static final vk ax = a("interact_with_stonecutter", ady.b);
+   public static final vk ay = a("bell_ring", ady.b);
+   public static final vk az = a("raid_trigger", ady.b);
+   public static final vk aA = a("raid_win", ady.b);
+   public static final vk aB = a("interact_with_anvil", ady.b);
+   public static final vk aC = a("interact_with_grindstone", ady.b);
+   public static final vk aD = a("target_hit", ady.b);
+   public static final vk aE = a("interact_with_smithing_table", ady.b);
+
+   private static vk a(String var0, ady var1) {
+      vk _snowman = new vk(_snowman);
+      gm.a(gm.Y, _snowman, _snowman);
+      i.a(_snowman, _snowman);
+      return _snowman;
+   }
+
+   private static <T> adz<T> a(String var0, gm<T> var1) {
+      return gm.a(gm.ag, _snowman, new adz<>(_snowman));
+   }
+}

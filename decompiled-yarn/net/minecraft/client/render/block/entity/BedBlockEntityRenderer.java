@@ -1,0 +1,95 @@
+package net.minecraft.client.render.block.entity;
+
+import net.minecraft.block.BedBlock;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.ChestBlock;
+import net.minecraft.block.DoubleBlockProperties;
+import net.minecraft.block.entity.BedBlockEntity;
+import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.block.enums.BedPart;
+import net.minecraft.client.model.ModelPart;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.TexturedRenderLayers;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.util.SpriteIdentifier;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.util.math.Vector3f;
+import net.minecraft.util.math.Direction;
+import net.minecraft.world.World;
+
+public class BedBlockEntityRenderer extends BlockEntityRenderer<BedBlockEntity> {
+   private final ModelPart field_20813;
+   private final ModelPart field_20814;
+   private final ModelPart[] legs = new ModelPart[4];
+
+   public BedBlockEntityRenderer(BlockEntityRenderDispatcher _snowman) {
+      super(_snowman);
+      this.field_20813 = new ModelPart(64, 64, 0, 0);
+      this.field_20813.addCuboid(0.0F, 0.0F, 0.0F, 16.0F, 16.0F, 6.0F, 0.0F);
+      this.field_20814 = new ModelPart(64, 64, 0, 22);
+      this.field_20814.addCuboid(0.0F, 0.0F, 0.0F, 16.0F, 16.0F, 6.0F, 0.0F);
+      this.legs[0] = new ModelPart(64, 64, 50, 0);
+      this.legs[1] = new ModelPart(64, 64, 50, 6);
+      this.legs[2] = new ModelPart(64, 64, 50, 12);
+      this.legs[3] = new ModelPart(64, 64, 50, 18);
+      this.legs[0].addCuboid(0.0F, 6.0F, -16.0F, 3.0F, 3.0F, 3.0F);
+      this.legs[1].addCuboid(0.0F, 6.0F, 0.0F, 3.0F, 3.0F, 3.0F);
+      this.legs[2].addCuboid(-16.0F, 6.0F, -16.0F, 3.0F, 3.0F, 3.0F);
+      this.legs[3].addCuboid(-16.0F, 6.0F, 0.0F, 3.0F, 3.0F, 3.0F);
+      this.legs[0].pitch = (float) (Math.PI / 2);
+      this.legs[1].pitch = (float) (Math.PI / 2);
+      this.legs[2].pitch = (float) (Math.PI / 2);
+      this.legs[3].pitch = (float) (Math.PI / 2);
+      this.legs[0].roll = 0.0F;
+      this.legs[1].roll = (float) (Math.PI / 2);
+      this.legs[2].roll = (float) (Math.PI * 3.0 / 2.0);
+      this.legs[3].roll = (float) Math.PI;
+   }
+
+   public void render(BedBlockEntity _snowman, float _snowman, MatrixStack _snowman, VertexConsumerProvider _snowman, int _snowman, int _snowman) {
+      SpriteIdentifier _snowmanxxxxxx = TexturedRenderLayers.BED_TEXTURES[_snowman.getColor().getId()];
+      World _snowmanxxxxxxx = _snowman.getWorld();
+      if (_snowmanxxxxxxx != null) {
+         BlockState _snowmanxxxxxxxx = _snowman.getCachedState();
+         DoubleBlockProperties.PropertySource<? extends BedBlockEntity> _snowmanxxxxxxxxx = DoubleBlockProperties.toPropertySource(
+            BlockEntityType.BED,
+            BedBlock::getBedPart,
+            BedBlock::getOppositePartDirection,
+            ChestBlock.FACING,
+            _snowmanxxxxxxxx,
+            _snowmanxxxxxxx,
+            _snowman.getPos(),
+            (_snowmanxxxxxxxxxx, _snowmanxxxxxxxxxxx) -> false
+         );
+         int _snowmanxxxxxxxxxx = _snowmanxxxxxxxxx.apply(new LightmapCoordinatesRetriever<>()).get(_snowman);
+         this.method_3558(_snowman, _snowman, _snowmanxxxxxxxx.get(BedBlock.PART) == BedPart.HEAD, _snowmanxxxxxxxx.get(BedBlock.FACING), _snowmanxxxxxx, _snowmanxxxxxxxxxx, _snowman, false);
+      } else {
+         this.method_3558(_snowman, _snowman, true, Direction.SOUTH, _snowmanxxxxxx, _snowman, _snowman, false);
+         this.method_3558(_snowman, _snowman, false, Direction.SOUTH, _snowmanxxxxxx, _snowman, _snowman, true);
+      }
+   }
+
+   private void method_3558(MatrixStack matrix, VertexConsumerProvider _snowman, boolean _snowman, Direction _snowman, SpriteIdentifier _snowman, int light, int overlay, boolean _snowman) {
+      this.field_20813.visible = _snowman;
+      this.field_20814.visible = !_snowman;
+      this.legs[0].visible = !_snowman;
+      this.legs[1].visible = _snowman;
+      this.legs[2].visible = !_snowman;
+      this.legs[3].visible = _snowman;
+      matrix.push();
+      matrix.translate(0.0, 0.5625, _snowman ? -1.0 : 0.0);
+      matrix.multiply(Vector3f.POSITIVE_X.getDegreesQuaternion(90.0F));
+      matrix.translate(0.5, 0.5, 0.5);
+      matrix.multiply(Vector3f.POSITIVE_Z.getDegreesQuaternion(180.0F + _snowman.asRotation()));
+      matrix.translate(-0.5, -0.5, -0.5);
+      VertexConsumer _snowmanxxxxx = _snowman.getVertexConsumer(_snowman, RenderLayer::getEntitySolid);
+      this.field_20813.render(matrix, _snowmanxxxxx, light, overlay);
+      this.field_20814.render(matrix, _snowmanxxxxx, light, overlay);
+      this.legs[0].render(matrix, _snowmanxxxxx, light, overlay);
+      this.legs[1].render(matrix, _snowmanxxxxx, light, overlay);
+      this.legs[2].render(matrix, _snowmanxxxxx, light, overlay);
+      this.legs[3].render(matrix, _snowmanxxxxx, light, overlay);
+      matrix.pop();
+   }
+}

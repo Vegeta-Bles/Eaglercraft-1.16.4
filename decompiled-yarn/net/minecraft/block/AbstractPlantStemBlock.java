@@ -1,0 +1,99 @@
+package net.minecraft.block;
+
+import java.util.Random;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.IntProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldAccess;
+
+public abstract class AbstractPlantStemBlock extends AbstractPlantPartBlock implements Fertilizable {
+   public static final IntProperty AGE = Properties.AGE_25;
+   private final double growthChance;
+
+   protected AbstractPlantStemBlock(AbstractBlock.Settings settings, Direction growthDirection, VoxelShape outlineShape, boolean tickWater, double growthChance) {
+      super(settings, growthDirection, outlineShape, tickWater);
+      this.growthChance = growthChance;
+      this.setDefaultState(this.stateManager.getDefaultState().with(AGE, Integer.valueOf(0)));
+   }
+
+   @Override
+   public BlockState getRandomGrowthState(WorldAccess _snowman) {
+      return this.getDefaultState().with(AGE, Integer.valueOf(_snowman.getRandom().nextInt(25)));
+   }
+
+   @Override
+   public boolean hasRandomTicks(BlockState state) {
+      return state.get(AGE) < 25;
+   }
+
+   @Override
+   public void randomTick(BlockState state, ServerWorld world, BlockPos pos, Random random) {
+      if (state.get(AGE) < 25 && random.nextDouble() < this.growthChance) {
+         BlockPos _snowman = pos.offset(this.growthDirection);
+         if (this.chooseStemState(world.getBlockState(_snowman))) {
+            world.setBlockState(_snowman, state.cycle(AGE));
+         }
+      }
+   }
+
+   @Override
+   public BlockState getStateForNeighborUpdate(BlockState state, Direction direction, BlockState newState, WorldAccess world, BlockPos pos, BlockPos posFrom) {
+      if (direction == this.growthDirection.getOpposite() && !state.canPlaceAt(world, pos)) {
+         world.getBlockTickScheduler().schedule(pos, this, 1);
+      }
+
+      if (direction != this.growthDirection || !newState.isOf(this) && !newState.isOf(this.getPlant())) {
+         if (this.tickWater) {
+            world.getFluidTickScheduler().schedule(pos, Fluids.WATER, Fluids.WATER.getTickRate(world));
+         }
+
+         return super.getStateForNeighborUpdate(state, direction, newState, world, pos, posFrom);
+      } else {
+         return this.getPlant().getDefaultState();
+      }
+   }
+
+   @Override
+   protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+      builder.add(AGE);
+   }
+
+   @Override
+   public boolean isFertilizable(BlockView world, BlockPos pos, BlockState state, boolean isClient) {
+      return this.chooseStemState(world.getBlockState(pos.offset(this.growthDirection)));
+   }
+
+   @Override
+   public boolean canGrow(World world, Random random, BlockPos pos, BlockState state) {
+      return true;
+   }
+
+   @Override
+   public void grow(ServerWorld world, Random random, BlockPos pos, BlockState state) {
+      BlockPos _snowman = pos.offset(this.growthDirection);
+      int _snowmanx = Math.min(state.get(AGE) + 1, 25);
+      int _snowmanxx = this.method_26376(random);
+
+      for (int _snowmanxxx = 0; _snowmanxxx < _snowmanxx && this.chooseStemState(world.getBlockState(_snowman)); _snowmanxxx++) {
+         world.setBlockState(_snowman, state.with(AGE, Integer.valueOf(_snowmanx)));
+         _snowman = _snowman.offset(this.growthDirection);
+         _snowmanx = Math.min(_snowmanx + 1, 25);
+      }
+   }
+
+   protected abstract int method_26376(Random var1);
+
+   protected abstract boolean chooseStemState(BlockState state);
+
+   @Override
+   protected AbstractPlantStemBlock getStem() {
+      return this;
+   }
+}

@@ -1,0 +1,218 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.Sets
+ */
+package net.minecraft.entity.projectile;
+
+import com.google.common.collect.Sets;
+import java.util.List;
+import java.util.Set;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.projectile.PersistentProjectileEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.potion.Potion;
+import net.minecraft.potion.PotionUtil;
+import net.minecraft.potion.Potions;
+import net.minecraft.util.registry.Registry;
+import net.minecraft.world.World;
+
+public class ArrowEntity
+extends PersistentProjectileEntity {
+    private static final TrackedData<Integer> COLOR = DataTracker.registerData(ArrowEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private Potion potion = Potions.EMPTY;
+    private final Set<StatusEffectInstance> effects = Sets.newHashSet();
+    private boolean colorSet;
+
+    public ArrowEntity(EntityType<? extends ArrowEntity> entityType, World world) {
+        super((EntityType<? extends PersistentProjectileEntity>)entityType, world);
+    }
+
+    public ArrowEntity(World world, double x, double y, double z) {
+        super(EntityType.ARROW, x, y, z, world);
+    }
+
+    public ArrowEntity(World world, LivingEntity owner) {
+        super(EntityType.ARROW, owner, world);
+    }
+
+    public void initFromStack(ItemStack stack) {
+        if (stack.getItem() == Items.TIPPED_ARROW) {
+            int n;
+            this.potion = PotionUtil.getPotion(stack);
+            List<StatusEffectInstance> list = PotionUtil.getCustomPotionEffects(stack);
+            if (!list.isEmpty()) {
+                for (StatusEffectInstance statusEffectInstance : list) {
+                    this.effects.add(new StatusEffectInstance(statusEffectInstance));
+                }
+            }
+            if ((n = ArrowEntity.getCustomPotionColor(stack)) == -1) {
+                this.initColor();
+            } else {
+                this.setColor(n);
+            }
+        } else if (stack.getItem() == Items.ARROW) {
+            this.potion = Potions.EMPTY;
+            this.effects.clear();
+            this.dataTracker.set(COLOR, -1);
+        }
+    }
+
+    public static int getCustomPotionColor(ItemStack stack) {
+        CompoundTag compoundTag = stack.getTag();
+        if (compoundTag != null && compoundTag.contains("CustomPotionColor", 99)) {
+            return compoundTag.getInt("CustomPotionColor");
+        }
+        return -1;
+    }
+
+    private void initColor() {
+        this.colorSet = false;
+        if (this.potion == Potions.EMPTY && this.effects.isEmpty()) {
+            this.dataTracker.set(COLOR, -1);
+        } else {
+            this.dataTracker.set(COLOR, PotionUtil.getColor(PotionUtil.getPotionEffects(this.potion, this.effects)));
+        }
+    }
+
+    public void addEffect(StatusEffectInstance effect) {
+        this.effects.add(effect);
+        this.getDataTracker().set(COLOR, PotionUtil.getColor(PotionUtil.getPotionEffects(this.potion, this.effects)));
+    }
+
+    @Override
+    protected void initDataTracker() {
+        super.initDataTracker();
+        this.dataTracker.startTracking(COLOR, -1);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.world.isClient) {
+            if (this.inGround) {
+                if (this.inGroundTime % 5 == 0) {
+                    this.spawnParticles(1);
+                }
+            } else {
+                this.spawnParticles(2);
+            }
+        } else if (this.inGround && this.inGroundTime != 0 && !this.effects.isEmpty() && this.inGroundTime >= 600) {
+            this.world.sendEntityStatus(this, (byte)0);
+            this.potion = Potions.EMPTY;
+            this.effects.clear();
+            this.dataTracker.set(COLOR, -1);
+        }
+    }
+
+    private void spawnParticles(int n) {
+        _snowman = this.getColor();
+        if (_snowman == -1 || n <= 0) {
+            return;
+        }
+        double d = (double)(_snowman >> 16 & 0xFF) / 255.0;
+        _snowman = (double)(_snowman >> 8 & 0xFF) / 255.0;
+        _snowman = (double)(_snowman >> 0 & 0xFF) / 255.0;
+        for (int i = 0; i < n; ++i) {
+            this.world.addParticle(ParticleTypes.ENTITY_EFFECT, this.getParticleX(0.5), this.getRandomBodyY(), this.getParticleZ(0.5), d, _snowman, _snowman);
+        }
+    }
+
+    public int getColor() {
+        return this.dataTracker.get(COLOR);
+    }
+
+    private void setColor(int color) {
+        this.colorSet = true;
+        this.dataTracker.set(COLOR, color);
+    }
+
+    @Override
+    public void writeCustomDataToTag(CompoundTag tag) {
+        super.writeCustomDataToTag(tag);
+        if (this.potion != Potions.EMPTY && this.potion != null) {
+            tag.putString("Potion", Registry.POTION.getId(this.potion).toString());
+        }
+        if (this.colorSet) {
+            tag.putInt("Color", this.getColor());
+        }
+        if (!this.effects.isEmpty()) {
+            ListTag listTag = new ListTag();
+            for (StatusEffectInstance statusEffectInstance : this.effects) {
+                listTag.add(statusEffectInstance.toTag(new CompoundTag()));
+            }
+            tag.put("CustomPotionEffects", listTag);
+        }
+    }
+
+    @Override
+    public void readCustomDataFromTag(CompoundTag tag) {
+        super.readCustomDataFromTag(tag);
+        if (tag.contains("Potion", 8)) {
+            this.potion = PotionUtil.getPotion(tag);
+        }
+        for (StatusEffectInstance statusEffectInstance : PotionUtil.getCustomPotionEffects(tag)) {
+            this.addEffect(statusEffectInstance);
+        }
+        if (tag.contains("Color", 99)) {
+            this.setColor(tag.getInt("Color"));
+        } else {
+            this.initColor();
+        }
+    }
+
+    @Override
+    protected void onHit(LivingEntity target) {
+        super.onHit(target);
+        for (StatusEffectInstance statusEffectInstance : this.potion.getEffects()) {
+            target.addStatusEffect(new StatusEffectInstance(statusEffectInstance.getEffectType(), Math.max(statusEffectInstance.getDuration() / 8, 1), statusEffectInstance.getAmplifier(), statusEffectInstance.isAmbient(), statusEffectInstance.shouldShowParticles()));
+        }
+        if (!this.effects.isEmpty()) {
+            for (StatusEffectInstance statusEffectInstance : this.effects) {
+                target.addStatusEffect(statusEffectInstance);
+            }
+        }
+    }
+
+    @Override
+    protected ItemStack asItemStack() {
+        if (this.effects.isEmpty() && this.potion == Potions.EMPTY) {
+            return new ItemStack(Items.ARROW);
+        }
+        ItemStack itemStack = new ItemStack(Items.TIPPED_ARROW);
+        PotionUtil.setPotion(itemStack, this.potion);
+        PotionUtil.setCustomPotionEffects(itemStack, this.effects);
+        if (this.colorSet) {
+            itemStack.getOrCreateTag().putInt("CustomPotionColor", this.getColor());
+        }
+        return itemStack;
+    }
+
+    @Override
+    public void handleStatus(byte status) {
+        if (status == 0) {
+            int n = this.getColor();
+            if (n != -1) {
+                double d = (double)(n >> 16 & 0xFF) / 255.0;
+                _snowman = (double)(n >> 8 & 0xFF) / 255.0;
+                _snowman = (double)(n >> 0 & 0xFF) / 255.0;
+                for (int i = 0; i < 20; ++i) {
+                    this.world.addParticle(ParticleTypes.ENTITY_EFFECT, this.getParticleX(0.5), this.getRandomBodyY(), this.getParticleZ(0.5), d, _snowman, _snowman);
+                }
+            }
+        } else {
+            super.handleStatus(status);
+        }
+    }
+}
+

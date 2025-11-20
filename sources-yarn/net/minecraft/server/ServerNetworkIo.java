@@ -1,0 +1,182 @@
+package net.minecraft.server;
+
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelException;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.epoll.Epoll;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
+import io.netty.channel.local.LocalAddress;
+import io.netty.channel.local.LocalServerChannel;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import javax.annotation.Nullable;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.network.ClientConnection;
+import net.minecraft.network.DecoderHandler;
+import net.minecraft.network.LegacyQueryHandler;
+import net.minecraft.network.NetworkSide;
+import net.minecraft.network.PacketEncoder;
+import net.minecraft.network.RateLimitedConnection;
+import net.minecraft.network.SizePrepender;
+import net.minecraft.network.SplitterHandler;
+import net.minecraft.network.packet.s2c.play.DisconnectS2CPacket;
+import net.minecraft.server.network.IntegratedServerHandshakeNetworkHandler;
+import net.minecraft.server.network.ServerHandshakeNetworkHandler;
+import net.minecraft.text.LiteralText;
+import net.minecraft.text.Text;
+import net.minecraft.util.Lazy;
+import net.minecraft.util.crash.CrashException;
+import net.minecraft.util.crash.CrashReport;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class ServerNetworkIo {
+   private static final Logger LOGGER = LogManager.getLogger();
+   public static final Lazy<NioEventLoopGroup> DEFAULT_CHANNEL = new Lazy<>(
+      () -> new NioEventLoopGroup(0, new ThreadFactoryBuilder().setNameFormat("Netty Server IO #%d").setDaemon(true).build())
+   );
+   public static final Lazy<EpollEventLoopGroup> EPOLL_CHANNEL = new Lazy<>(
+      () -> new EpollEventLoopGroup(0, new ThreadFactoryBuilder().setNameFormat("Netty Epoll Server IO #%d").setDaemon(true).build())
+   );
+   private final MinecraftServer server;
+   public volatile boolean active;
+   private final List<ChannelFuture> channels = Collections.synchronizedList(Lists.newArrayList());
+   private final List<ClientConnection> connections = Collections.synchronizedList(Lists.newArrayList());
+
+   public ServerNetworkIo(MinecraftServer server) {
+      this.server = server;
+      this.active = true;
+   }
+
+   public void bind(@Nullable InetAddress address, int port) throws IOException {
+      synchronized (this.channels) {
+         Class<? extends ServerSocketChannel> class_;
+         Lazy<? extends EventLoopGroup> lv;
+         if (Epoll.isAvailable() && this.server.isUsingNativeTransport()) {
+            class_ = EpollServerSocketChannel.class;
+            lv = EPOLL_CHANNEL;
+            LOGGER.info("Using epoll channel type");
+         } else {
+            class_ = NioServerSocketChannel.class;
+            lv = DEFAULT_CHANNEL;
+            LOGGER.info("Using default channel type");
+         }
+
+         this.channels
+            .add(
+               ((ServerBootstrap)((ServerBootstrap)new ServerBootstrap().channel(class_))
+                     .childHandler(
+                        new ChannelInitializer<Channel>() {
+                           protected void initChannel(Channel channel) throws Exception {
+                              try {
+                                 channel.config().setOption(ChannelOption.TCP_NODELAY, true);
+                              } catch (ChannelException var4) {
+                              }
+
+                              channel.pipeline()
+                                 .addLast("timeout", new ReadTimeoutHandler(30))
+                                 .addLast("legacy_query", new LegacyQueryHandler(ServerNetworkIo.this))
+                                 .addLast("splitter", new SplitterHandler())
+                                 .addLast("decoder", new DecoderHandler(NetworkSide.SERVERBOUND))
+                                 .addLast("prepender", new SizePrepender())
+                                 .addLast("encoder", new PacketEncoder(NetworkSide.CLIENTBOUND));
+                              int i = ServerNetworkIo.this.server.getRateLimit();
+                              ClientConnection lv = (ClientConnection)(i > 0 ? new RateLimitedConnection(i) : new ClientConnection(NetworkSide.SERVERBOUND));
+                              ServerNetworkIo.this.connections.add(lv);
+                              channel.pipeline().addLast("packet_handler", lv);
+                              lv.setPacketListener(new ServerHandshakeNetworkHandler(ServerNetworkIo.this.server, lv));
+                           }
+                        }
+                     )
+                     .group(lv.get())
+                     .localAddress(address, port))
+                  .bind()
+                  .syncUninterruptibly()
+            );
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public SocketAddress bindLocal() {
+      ChannelFuture channelFuture;
+      synchronized (this.channels) {
+         channelFuture = ((ServerBootstrap)((ServerBootstrap)new ServerBootstrap().channel(LocalServerChannel.class))
+               .childHandler(new ChannelInitializer<Channel>() {
+                  protected void initChannel(Channel channel) throws Exception {
+                     ClientConnection lv = new ClientConnection(NetworkSide.SERVERBOUND);
+                     lv.setPacketListener(new IntegratedServerHandshakeNetworkHandler(ServerNetworkIo.this.server, lv));
+                     ServerNetworkIo.this.connections.add(lv);
+                     channel.pipeline().addLast("packet_handler", lv);
+                  }
+               })
+               .group((EventLoopGroup)DEFAULT_CHANNEL.get())
+               .localAddress(LocalAddress.ANY))
+            .bind()
+            .syncUninterruptibly();
+         this.channels.add(channelFuture);
+      }
+
+      return channelFuture.channel().localAddress();
+   }
+
+   public void stop() {
+      this.active = false;
+
+      for (ChannelFuture channelFuture : this.channels) {
+         try {
+            channelFuture.channel().close().sync();
+         } catch (InterruptedException var4) {
+            LOGGER.error("Interrupted whilst closing channel");
+         }
+      }
+   }
+
+   public void tick() {
+      synchronized (this.connections) {
+         Iterator<ClientConnection> iterator = this.connections.iterator();
+
+         while (iterator.hasNext()) {
+            ClientConnection lv = iterator.next();
+            if (!lv.hasChannel()) {
+               if (lv.isOpen()) {
+                  try {
+                     lv.tick();
+                  } catch (Exception var7) {
+                     if (lv.isLocal()) {
+                        throw new CrashException(CrashReport.create(var7, "Ticking memory connection"));
+                     }
+
+                     LOGGER.warn("Failed to handle packet for {}", lv.getAddress(), var7);
+                     Text lv2 = new LiteralText("Internal server error");
+                     lv.send(new DisconnectS2CPacket(lv2), future -> lv.disconnect(lv2));
+                     lv.disableAutoRead();
+                  }
+               } else {
+                  iterator.remove();
+                  lv.handleDisconnection();
+               }
+            }
+         }
+      }
+   }
+
+   public MinecraftServer getServer() {
+      return this.server;
+   }
+}

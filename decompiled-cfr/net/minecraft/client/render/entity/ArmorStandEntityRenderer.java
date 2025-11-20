@@ -1,0 +1,77 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  javax.annotation.Nullable
+ */
+package net.minecraft.client.render.entity;
+
+import javax.annotation.Nullable;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.render.entity.LivingEntityRenderer;
+import net.minecraft.client.render.entity.feature.ArmorFeatureRenderer;
+import net.minecraft.client.render.entity.feature.ElytraFeatureRenderer;
+import net.minecraft.client.render.entity.feature.HeadFeatureRenderer;
+import net.minecraft.client.render.entity.feature.HeldItemFeatureRenderer;
+import net.minecraft.client.render.entity.model.ArmorStandArmorEntityModel;
+import net.minecraft.client.render.entity.model.ArmorStandEntityModel;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.util.math.Vector3f;
+import net.minecraft.entity.decoration.ArmorStandEntity;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
+
+public class ArmorStandEntityRenderer
+extends LivingEntityRenderer<ArmorStandEntity, ArmorStandArmorEntityModel> {
+    public static final Identifier TEXTURE = new Identifier("textures/entity/armorstand/wood.png");
+
+    public ArmorStandEntityRenderer(EntityRenderDispatcher entityRenderDispatcher) {
+        super(entityRenderDispatcher, new ArmorStandEntityModel(), 0.0f);
+        this.addFeature(new ArmorFeatureRenderer<ArmorStandEntity, ArmorStandArmorEntityModel, ArmorStandArmorEntityModel>(this, new ArmorStandArmorEntityModel(0.5f), new ArmorStandArmorEntityModel(1.0f)));
+        this.addFeature(new HeldItemFeatureRenderer<ArmorStandEntity, ArmorStandArmorEntityModel>(this));
+        this.addFeature(new ElytraFeatureRenderer<ArmorStandEntity, ArmorStandArmorEntityModel>(this));
+        this.addFeature(new HeadFeatureRenderer<ArmorStandEntity, ArmorStandArmorEntityModel>(this));
+    }
+
+    @Override
+    public Identifier getTexture(ArmorStandEntity armorStandEntity) {
+        return TEXTURE;
+    }
+
+    @Override
+    protected void setupTransforms(ArmorStandEntity armorStandEntity, MatrixStack matrixStack, float f, float f2, float f3) {
+        matrixStack.multiply(Vector3f.POSITIVE_Y.getDegreesQuaternion(180.0f - f2));
+        _snowman = (float)(armorStandEntity.world.getTime() - armorStandEntity.lastHitTime) + f3;
+        if (_snowman < 5.0f) {
+            matrixStack.multiply(Vector3f.POSITIVE_Y.getDegreesQuaternion(MathHelper.sin(_snowman / 1.5f * (float)Math.PI) * 3.0f));
+        }
+    }
+
+    @Override
+    protected boolean hasLabel(ArmorStandEntity armorStandEntity) {
+        double d = this.dispatcher.getSquaredDistanceToCamera(armorStandEntity);
+        float f = _snowman = armorStandEntity.isInSneakingPose() ? 32.0f : 64.0f;
+        if (d >= (double)(_snowman * _snowman)) {
+            return false;
+        }
+        return armorStandEntity.isCustomNameVisible();
+    }
+
+    @Override
+    @Nullable
+    protected RenderLayer getRenderLayer(ArmorStandEntity armorStandEntity, boolean bl, boolean bl2, boolean bl3) {
+        if (!armorStandEntity.isMarker()) {
+            return super.getRenderLayer(armorStandEntity, bl, bl2, bl3);
+        }
+        Identifier identifier = this.getTexture(armorStandEntity);
+        if (bl2) {
+            return RenderLayer.getEntityTranslucent(identifier, false);
+        }
+        if (bl) {
+            return RenderLayer.getEntityCutoutNoCull(identifier, false);
+        }
+        return null;
+    }
+}
+

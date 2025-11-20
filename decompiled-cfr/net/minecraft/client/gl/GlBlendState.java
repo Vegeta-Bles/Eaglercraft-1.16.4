@@ -1,0 +1,166 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.gl;
+
+import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.Locale;
+
+public class GlBlendState {
+    private static GlBlendState activeBlendState;
+    private final int srcRgb;
+    private final int srcAlpha;
+    private final int dstRgb;
+    private final int dstAlpha;
+    private final int func;
+    private final boolean separateBlend;
+    private final boolean blendDisabled;
+
+    private GlBlendState(boolean separateBlend, boolean blendDisabled, int srcRgb, int dstRgb, int srcAlpha, int dstAlpha, int func) {
+        this.separateBlend = separateBlend;
+        this.srcRgb = srcRgb;
+        this.dstRgb = dstRgb;
+        this.srcAlpha = srcAlpha;
+        this.dstAlpha = dstAlpha;
+        this.blendDisabled = blendDisabled;
+        this.func = func;
+    }
+
+    public GlBlendState() {
+        this(false, true, 1, 0, 1, 0, 32774);
+    }
+
+    public GlBlendState(int srcRgb, int dstRgb, int func) {
+        this(false, false, srcRgb, dstRgb, srcRgb, dstRgb, func);
+    }
+
+    public GlBlendState(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha, int func) {
+        this(true, false, srcRgb, dstRgb, srcAlpha, dstAlpha, func);
+    }
+
+    public void enable() {
+        if (this.equals(activeBlendState)) {
+            return;
+        }
+        if (activeBlendState == null || this.blendDisabled != activeBlendState.isBlendDisabled()) {
+            activeBlendState = this;
+            if (this.blendDisabled) {
+                RenderSystem.disableBlend();
+                return;
+            }
+            RenderSystem.enableBlend();
+        }
+        RenderSystem.blendEquation(this.func);
+        if (this.separateBlend) {
+            RenderSystem.blendFuncSeparate(this.srcRgb, this.dstRgb, this.srcAlpha, this.dstAlpha);
+        } else {
+            RenderSystem.blendFunc(this.srcRgb, this.dstRgb);
+        }
+    }
+
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof GlBlendState)) {
+            return false;
+        }
+        GlBlendState glBlendState = (GlBlendState)o;
+        if (this.func != glBlendState.func) {
+            return false;
+        }
+        if (this.dstAlpha != glBlendState.dstAlpha) {
+            return false;
+        }
+        if (this.dstRgb != glBlendState.dstRgb) {
+            return false;
+        }
+        if (this.blendDisabled != glBlendState.blendDisabled) {
+            return false;
+        }
+        if (this.separateBlend != glBlendState.separateBlend) {
+            return false;
+        }
+        if (this.srcAlpha != glBlendState.srcAlpha) {
+            return false;
+        }
+        return this.srcRgb == glBlendState.srcRgb;
+    }
+
+    public int hashCode() {
+        int n = this.srcRgb;
+        n = 31 * n + this.srcAlpha;
+        n = 31 * n + this.dstRgb;
+        n = 31 * n + this.dstAlpha;
+        n = 31 * n + this.func;
+        n = 31 * n + (this.separateBlend ? 1 : 0);
+        n = 31 * n + (this.blendDisabled ? 1 : 0);
+        return n;
+    }
+
+    public boolean isBlendDisabled() {
+        return this.blendDisabled;
+    }
+
+    public static int getFuncFromString(String string) {
+        _snowman = string.trim().toLowerCase(Locale.ROOT);
+        if ("add".equals(_snowman)) {
+            return 32774;
+        }
+        if ("subtract".equals(_snowman)) {
+            return 32778;
+        }
+        if ("reversesubtract".equals(_snowman)) {
+            return 32779;
+        }
+        if ("reverse_subtract".equals(_snowman)) {
+            return 32779;
+        }
+        if ("min".equals(_snowman)) {
+            return 32775;
+        }
+        if ("max".equals(_snowman)) {
+            return 32776;
+        }
+        return 32774;
+    }
+
+    public static int getComponentFromString(String string) {
+        _snowman = string.trim().toLowerCase(Locale.ROOT);
+        _snowman = _snowman.replaceAll("_", "");
+        _snowman = _snowman.replaceAll("one", "1");
+        _snowman = _snowman.replaceAll("zero", "0");
+        if ("0".equals(_snowman = _snowman.replaceAll("minus", "-"))) {
+            return 0;
+        }
+        if ("1".equals(_snowman)) {
+            return 1;
+        }
+        if ("srccolor".equals(_snowman)) {
+            return 768;
+        }
+        if ("1-srccolor".equals(_snowman)) {
+            return 769;
+        }
+        if ("dstcolor".equals(_snowman)) {
+            return 774;
+        }
+        if ("1-dstcolor".equals(_snowman)) {
+            return 775;
+        }
+        if ("srcalpha".equals(_snowman)) {
+            return 770;
+        }
+        if ("1-srcalpha".equals(_snowman)) {
+            return 771;
+        }
+        if ("dstalpha".equals(_snowman)) {
+            return 772;
+        }
+        if ("1-dstalpha".equals(_snowman)) {
+            return 773;
+        }
+        return -1;
+    }
+}
+

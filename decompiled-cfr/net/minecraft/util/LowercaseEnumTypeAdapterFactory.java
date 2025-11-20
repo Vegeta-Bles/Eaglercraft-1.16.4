@@ -1,0 +1,81 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.Maps
+ *  com.google.gson.Gson
+ *  com.google.gson.TypeAdapter
+ *  com.google.gson.TypeAdapterFactory
+ *  com.google.gson.reflect.TypeToken
+ *  com.google.gson.stream.JsonReader
+ *  com.google.gson.stream.JsonToken
+ *  com.google.gson.stream.JsonWriter
+ *  javax.annotation.Nullable
+ */
+package net.minecraft.util;
+
+import com.google.common.collect.Maps;
+import com.google.gson.Gson;
+import com.google.gson.TypeAdapter;
+import com.google.gson.TypeAdapterFactory;
+import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
+import com.google.gson.stream.JsonWriter;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import javax.annotation.Nullable;
+
+public class LowercaseEnumTypeAdapterFactory
+implements TypeAdapterFactory {
+    @Nullable
+    public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> typeToken) {
+        Class clazz = typeToken.getRawType();
+        if (!clazz.isEnum()) {
+            return null;
+        }
+        HashMap _snowman2 = Maps.newHashMap();
+        for (Object t : clazz.getEnumConstants()) {
+            _snowman2.put(this.getKey(t), t);
+        }
+        return new TypeAdapter<T>(this, _snowman2){
+            final /* synthetic */ Map field_15720;
+            final /* synthetic */ LowercaseEnumTypeAdapterFactory field_15721;
+            {
+                this.field_15721 = lowercaseEnumTypeAdapterFactory;
+                this.field_15720 = map;
+            }
+
+            public void write(JsonWriter jsonWriter, T t) throws IOException {
+                if (t == null) {
+                    jsonWriter.nullValue();
+                } else {
+                    jsonWriter.value(LowercaseEnumTypeAdapterFactory.method_15335(this.field_15721, t));
+                }
+            }
+
+            @Nullable
+            public T read(JsonReader jsonReader) throws IOException {
+                if (jsonReader.peek() == JsonToken.NULL) {
+                    jsonReader.nextNull();
+                    return null;
+                }
+                return (T)this.field_15720.get(jsonReader.nextString());
+            }
+        };
+    }
+
+    private String getKey(Object o) {
+        if (o instanceof Enum) {
+            return ((Enum)o).name().toLowerCase(Locale.ROOT);
+        }
+        return o.toString().toLowerCase(Locale.ROOT);
+    }
+
+    static /* synthetic */ String method_15335(LowercaseEnumTypeAdapterFactory lowercaseEnumTypeAdapterFactory, Object object) {
+        return lowercaseEnumTypeAdapterFactory.getKey(object);
+    }
+}
+

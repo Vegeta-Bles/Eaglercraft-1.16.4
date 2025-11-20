@@ -1,0 +1,60 @@
+package net.minecraft.client.sound;
+
+import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
+
+public class AmbientSoundLoops {
+   public static class MusicLoop extends MovingSoundInstance {
+      private final ClientPlayerEntity player;
+
+      protected MusicLoop(ClientPlayerEntity player, SoundEvent soundEvent) {
+         super(soundEvent, SoundCategory.AMBIENT);
+         this.player = player;
+         this.repeat = false;
+         this.repeatDelay = 0;
+         this.volume = 1.0F;
+         this.field_18935 = true;
+         this.looping = true;
+      }
+
+      @Override
+      public void tick() {
+         if (this.player.removed || !this.player.isSubmergedInWater()) {
+            this.setDone();
+         }
+      }
+   }
+
+   public static class Underwater extends MovingSoundInstance {
+      private final ClientPlayerEntity player;
+      private int transitionTimer;
+
+      public Underwater(ClientPlayerEntity _snowman) {
+         super(SoundEvents.AMBIENT_UNDERWATER_LOOP, SoundCategory.AMBIENT);
+         this.player = _snowman;
+         this.repeat = true;
+         this.repeatDelay = 0;
+         this.volume = 1.0F;
+         this.field_18935 = true;
+         this.looping = true;
+      }
+
+      @Override
+      public void tick() {
+         if (!this.player.removed && this.transitionTimer >= 0) {
+            if (this.player.isSubmergedInWater()) {
+               this.transitionTimer++;
+            } else {
+               this.transitionTimer -= 2;
+            }
+
+            this.transitionTimer = Math.min(this.transitionTimer, 40);
+            this.volume = Math.max(0.0F, Math.min((float)this.transitionTimer / 40.0F, 1.0F));
+         } else {
+            this.setDone();
+         }
+      }
+   }
+}

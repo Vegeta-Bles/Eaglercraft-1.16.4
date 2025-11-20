@@ -1,0 +1,110 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.entity;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.Frustum;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Matrix4f;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.LightType;
+
+public abstract class EntityRenderer<T extends Entity> {
+    protected final EntityRenderDispatcher dispatcher;
+    protected float shadowRadius;
+    protected float shadowOpacity = 1.0f;
+
+    protected EntityRenderer(EntityRenderDispatcher dispatcher) {
+        this.dispatcher = dispatcher;
+    }
+
+    public final int getLight(T entity, float tickDelta) {
+        BlockPos blockPos = new BlockPos(((Entity)entity).method_31166(tickDelta));
+        return LightmapTextureManager.pack(this.getBlockLight(entity, blockPos), this.method_27950(entity, blockPos));
+    }
+
+    protected int method_27950(T t, BlockPos blockPos) {
+        return ((Entity)t).world.getLightLevel(LightType.SKY, blockPos);
+    }
+
+    protected int getBlockLight(T t, BlockPos blockPos) {
+        if (((Entity)t).isOnFire()) {
+            return 15;
+        }
+        return ((Entity)t).world.getLightLevel(LightType.BLOCK, blockPos);
+    }
+
+    public boolean shouldRender(T entity, Frustum frustum, double x, double y, double z) {
+        if (!((Entity)entity).shouldRender(x, y, z)) {
+            return false;
+        }
+        if (((Entity)entity).ignoreCameraFrustum) {
+            return true;
+        }
+        Box box = ((Entity)entity).getVisibilityBoundingBox().expand(0.5);
+        if (box.isValid() || box.getAverageSideLength() == 0.0) {
+            box = new Box(((Entity)entity).getX() - 2.0, ((Entity)entity).getY() - 2.0, ((Entity)entity).getZ() - 2.0, ((Entity)entity).getX() + 2.0, ((Entity)entity).getY() + 2.0, ((Entity)entity).getZ() + 2.0);
+        }
+        return frustum.isVisible(box);
+    }
+
+    public Vec3d getPositionOffset(T entity, float tickDelta) {
+        return Vec3d.ZERO;
+    }
+
+    public void render(T entity, float yaw, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light) {
+        if (!this.hasLabel(entity)) {
+            return;
+        }
+        this.renderLabelIfPresent(entity, ((Entity)entity).getDisplayName(), matrices, vertexConsumers, light);
+    }
+
+    protected boolean hasLabel(T entity) {
+        return ((Entity)entity).shouldRenderName() && ((Entity)entity).hasCustomName();
+    }
+
+    public abstract Identifier getTexture(T var1);
+
+    public TextRenderer getFontRenderer() {
+        return this.dispatcher.getTextRenderer();
+    }
+
+    protected void renderLabelIfPresent(T entity, Text text, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light) {
+        double d = this.dispatcher.getSquaredDistanceToCamera((Entity)entity);
+        if (d > 4096.0) {
+            return;
+        }
+        boolean _snowman2 = !((Entity)entity).isSneaky();
+        float _snowman3 = ((Entity)entity).getHeight() + 0.5f;
+        int _snowman4 = "deadmau5".equals(text.getString()) ? -10 : 0;
+        matrices.push();
+        matrices.translate(0.0, _snowman3, 0.0);
+        matrices.multiply(this.dispatcher.getRotation());
+        matrices.scale(-0.025f, -0.025f, 0.025f);
+        Matrix4f _snowman5 = matrices.peek().getModel();
+        float _snowman6 = MinecraftClient.getInstance().options.getTextBackgroundOpacity(0.25f);
+        int _snowman7 = (int)(_snowman6 * 255.0f) << 24;
+        TextRenderer _snowman8 = this.getFontRenderer();
+        float _snowman9 = -_snowman8.getWidth(text) / 2;
+        _snowman8.draw(text, _snowman9, (float)_snowman4, 0x20FFFFFF, false, _snowman5, vertexConsumers, _snowman2, _snowman7, light);
+        if (_snowman2) {
+            _snowman8.draw(text, _snowman9, (float)_snowman4, -1, false, _snowman5, vertexConsumers, false, 0, light);
+        }
+        matrices.pop();
+    }
+
+    public EntityRenderDispatcher getRenderManager() {
+        return this.dispatcher;
+    }
+}
+

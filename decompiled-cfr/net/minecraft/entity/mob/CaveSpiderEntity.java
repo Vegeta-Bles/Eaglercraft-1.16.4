@@ -1,0 +1,68 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  javax.annotation.Nullable
+ */
+package net.minecraft.entity.mob;
+
+import javax.annotation.Nullable;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityData;
+import net.minecraft.entity.EntityDimensions;
+import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.mob.SpiderEntity;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.Difficulty;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
+
+public class CaveSpiderEntity
+extends SpiderEntity {
+    public CaveSpiderEntity(EntityType<? extends CaveSpiderEntity> entityType, World world) {
+        super((EntityType<? extends SpiderEntity>)entityType, world);
+    }
+
+    public static DefaultAttributeContainer.Builder createCaveSpiderAttributes() {
+        return SpiderEntity.createSpiderAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH, 12.0);
+    }
+
+    @Override
+    public boolean tryAttack(Entity target) {
+        if (super.tryAttack(target)) {
+            if (target instanceof LivingEntity) {
+                int n = 0;
+                if (this.world.getDifficulty() == Difficulty.NORMAL) {
+                    n = 7;
+                } else if (this.world.getDifficulty() == Difficulty.HARD) {
+                    n = 15;
+                }
+                if (n > 0) {
+                    ((LivingEntity)target).addStatusEffect(new StatusEffectInstance(StatusEffects.POISON, n * 20, 0));
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    @Nullable
+    public EntityData initialize(ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag) {
+        return entityData;
+    }
+
+    @Override
+    protected float getActiveEyeHeight(EntityPose pose, EntityDimensions dimensions) {
+        return 0.45f;
+    }
+}
+

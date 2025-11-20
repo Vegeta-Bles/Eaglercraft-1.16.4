@@ -1,0 +1,99 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.Lists
+ */
+package net.minecraft.client.gl;
+
+import com.google.common.collect.Lists;
+import com.mojang.blaze3d.systems.RenderSystem;
+import java.io.IOException;
+import java.util.List;
+import java.util.function.IntSupplier;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.gl.JsonGlProgram;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormats;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.util.math.Matrix4f;
+
+public class PostProcessShader
+implements AutoCloseable {
+    private final JsonGlProgram program;
+    public final Framebuffer input;
+    public final Framebuffer output;
+    private final List<IntSupplier> samplerValues = Lists.newArrayList();
+    private final List<String> samplerNames = Lists.newArrayList();
+    private final List<Integer> samplerWidths = Lists.newArrayList();
+    private final List<Integer> samplerHeights = Lists.newArrayList();
+    private Matrix4f projectionMatrix;
+
+    public PostProcessShader(ResourceManager resourceManager, String programName, Framebuffer input, Framebuffer output) throws IOException {
+        this.program = new JsonGlProgram(resourceManager, programName);
+        this.input = input;
+        this.output = output;
+    }
+
+    @Override
+    public void close() {
+        this.program.close();
+    }
+
+    public void addAuxTarget(String name, IntSupplier intSupplier, int width, int height) {
+        this.samplerNames.add(this.samplerNames.size(), name);
+        this.samplerValues.add(this.samplerValues.size(), intSupplier);
+        this.samplerWidths.add(this.samplerWidths.size(), width);
+        this.samplerHeights.add(this.samplerHeights.size(), height);
+    }
+
+    public void setProjectionMatrix(Matrix4f projectionMatrix) {
+        this.projectionMatrix = projectionMatrix;
+    }
+
+    public void render(float time) {
+        this.input.endWrite();
+        float f = this.output.textureWidth;
+        _snowman = this.output.textureHeight;
+        RenderSystem.viewport(0, 0, (int)f, (int)_snowman);
+        this.program.bindSampler("DiffuseSampler", this.input::getColorAttachment);
+        for (int i = 0; i < this.samplerValues.size(); ++i) {
+            this.program.bindSampler(this.samplerNames.get(i), this.samplerValues.get(i));
+            this.program.getUniformByNameOrDummy("AuxSize" + i).set(this.samplerWidths.get(i).intValue(), this.samplerHeights.get(i).intValue());
+        }
+        this.program.getUniformByNameOrDummy("ProjMat").set(this.projectionMatrix);
+        this.program.getUniformByNameOrDummy("InSize").set(this.input.textureWidth, this.input.textureHeight);
+        this.program.getUniformByNameOrDummy("OutSize").set(f, _snowman);
+        this.program.getUniformByNameOrDummy("Time").set(time);
+        MinecraftClient _snowman2 = MinecraftClient.getInstance();
+        this.program.getUniformByNameOrDummy("ScreenSize").set(_snowman2.getWindow().getFramebufferWidth(), _snowman2.getWindow().getFramebufferHeight());
+        this.program.enable();
+        this.output.clear(MinecraftClient.IS_SYSTEM_MAC);
+        this.output.beginWrite(false);
+        RenderSystem.depthFunc(519);
+        BufferBuilder _snowman3 = Tessellator.getInstance().getBuffer();
+        _snowman3.begin(7, VertexFormats.POSITION_COLOR);
+        _snowman3.vertex(0.0, 0.0, 500.0).color(255, 255, 255, 255).next();
+        _snowman3.vertex(f, 0.0, 500.0).color(255, 255, 255, 255).next();
+        _snowman3.vertex(f, _snowman, 500.0).color(255, 255, 255, 255).next();
+        _snowman3.vertex(0.0, _snowman, 500.0).color(255, 255, 255, 255).next();
+        _snowman3.end();
+        BufferRenderer.draw(_snowman3);
+        RenderSystem.depthFunc(515);
+        this.program.disable();
+        this.output.endWrite();
+        this.input.endRead();
+        for (IntSupplier intSupplier : this.samplerValues) {
+            if (!(intSupplier instanceof Framebuffer)) continue;
+            ((Framebuffer)((Object)intSupplier)).endRead();
+        }
+    }
+
+    public JsonGlProgram getProgram() {
+        return this.program;
+    }
+}
+

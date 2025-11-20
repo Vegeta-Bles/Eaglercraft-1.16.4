@@ -1,0 +1,42 @@
+package net.minecraft.particle;
+
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.serialization.Codec;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.util.registry.Registry;
+
+public class DefaultParticleType extends ParticleType<DefaultParticleType> implements ParticleEffect {
+   private static final ParticleEffect.Factory<DefaultParticleType> PARAMETER_FACTORY = new ParticleEffect.Factory<DefaultParticleType>() {
+      public DefaultParticleType read(ParticleType<DefaultParticleType> _snowman, StringReader _snowman) throws CommandSyntaxException {
+         return (DefaultParticleType)_snowman;
+      }
+
+      public DefaultParticleType read(ParticleType<DefaultParticleType> _snowman, PacketByteBuf _snowman) {
+         return (DefaultParticleType)_snowman;
+      }
+   };
+   private final Codec<DefaultParticleType> codec = Codec.unit(this::getType);
+
+   protected DefaultParticleType(boolean alwaysShow) {
+      super(alwaysShow, PARAMETER_FACTORY);
+   }
+
+   public DefaultParticleType getType() {
+      return this;
+   }
+
+   @Override
+   public Codec<DefaultParticleType> getCodec() {
+      return this.codec;
+   }
+
+   @Override
+   public void write(PacketByteBuf buf) {
+   }
+
+   @Override
+   public String asString() {
+      return Registry.PARTICLE_TYPE.getId(this).toString();
+   }
+}

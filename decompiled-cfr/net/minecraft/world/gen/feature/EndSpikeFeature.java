@@ -1,0 +1,183 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.cache.CacheBuilder
+ *  com.google.common.cache.CacheLoader
+ *  com.google.common.cache.LoadingCache
+ *  com.google.common.collect.Lists
+ *  com.mojang.datafixers.kinds.App
+ *  com.mojang.datafixers.kinds.Applicative
+ *  com.mojang.serialization.Codec
+ *  com.mojang.serialization.codecs.RecordCodecBuilder
+ */
+package net.minecraft.world.gen.feature;
+
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.collect.Lists;
+import com.mojang.datafixers.kinds.App;
+import com.mojang.datafixers.kinds.Applicative;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.PaneBlock;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.decoration.EndCrystalEntity;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.StructureWorldAccess;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+import net.minecraft.world.gen.feature.EndSpikeFeatureConfig;
+import net.minecraft.world.gen.feature.Feature;
+
+public class EndSpikeFeature
+extends Feature<EndSpikeFeatureConfig> {
+    private static final LoadingCache<Long, List<Spike>> CACHE = CacheBuilder.newBuilder().expireAfterWrite(5L, TimeUnit.MINUTES).build((CacheLoader)new SpikeCache());
+
+    public EndSpikeFeature(Codec<EndSpikeFeatureConfig> codec) {
+        super(codec);
+    }
+
+    public static List<Spike> getSpikes(StructureWorldAccess world) {
+        Random random = new Random(world.getSeed());
+        long _snowman2 = random.nextLong() & 0xFFFFL;
+        return (List)CACHE.getUnchecked((Object)_snowman2);
+    }
+
+    @Override
+    public boolean generate(StructureWorldAccess structureWorldAccess, ChunkGenerator chunkGenerator, Random random, BlockPos blockPos, EndSpikeFeatureConfig endSpikeFeatureConfig) {
+        List<Spike> list = endSpikeFeatureConfig.getSpikes();
+        if (list.isEmpty()) {
+            list = EndSpikeFeature.getSpikes(structureWorldAccess);
+        }
+        for (Spike spike : list) {
+            if (!spike.isInChunk(blockPos)) continue;
+            this.generateSpike(structureWorldAccess, random, endSpikeFeatureConfig, spike);
+        }
+        return true;
+    }
+
+    private void generateSpike(ServerWorldAccess world, Random random, EndSpikeFeatureConfig config, Spike spike) {
+        int n = spike.getRadius();
+        for (BlockPos blockPos : BlockPos.iterate(new BlockPos(spike.getCenterX() - n, 0, spike.getCenterZ() - n), new BlockPos(spike.getCenterX() + n, spike.getHeight() + 10, spike.getCenterZ() + n))) {
+            if (blockPos.getSquaredDistance(spike.getCenterX(), blockPos.getY(), spike.getCenterZ(), false) <= (double)(n * n + 1) && blockPos.getY() < spike.getHeight()) {
+                this.setBlockState(world, blockPos, Blocks.OBSIDIAN.getDefaultState());
+                continue;
+            }
+            if (blockPos.getY() <= 65) continue;
+            this.setBlockState(world, blockPos, Blocks.AIR.getDefaultState());
+        }
+        if (spike.isGuarded()) {
+            int n2 = -2;
+            _snowman = 2;
+            _snowman = 3;
+            BlockPos.Mutable _snowman2 = new BlockPos.Mutable();
+            for (_snowman = -2; _snowman <= 2; ++_snowman) {
+                for (_snowman = -2; _snowman <= 2; ++_snowman) {
+                    for (_snowman = 0; _snowman <= 3; ++_snowman) {
+                        boolean bl = MathHelper.abs(_snowman) == 2;
+                        _snowman = MathHelper.abs(_snowman) == 2;
+                        boolean bl2 = _snowman = _snowman == 3;
+                        if (!bl && !_snowman && !_snowman) continue;
+                        _snowman = _snowman == -2 || _snowman == 2 || _snowman;
+                        _snowman = _snowman == -2 || _snowman == 2 || _snowman;
+                        BlockState _snowman3 = (BlockState)((BlockState)((BlockState)((BlockState)Blocks.IRON_BARS.getDefaultState().with(PaneBlock.NORTH, _snowman && _snowman != -2)).with(PaneBlock.SOUTH, _snowman && _snowman != 2)).with(PaneBlock.WEST, _snowman && _snowman != -2)).with(PaneBlock.EAST, _snowman && _snowman != 2);
+                        this.setBlockState(world, _snowman2.set(spike.getCenterX() + _snowman, spike.getHeight() + _snowman, spike.getCenterZ() + _snowman), _snowman3);
+                    }
+                }
+            }
+        }
+        EndCrystalEntity endCrystalEntity = EntityType.END_CRYSTAL.create(world.toServerWorld());
+        endCrystalEntity.setBeamTarget(config.getPos());
+        endCrystalEntity.setInvulnerable(config.isCrystalInvulnerable());
+        endCrystalEntity.refreshPositionAndAngles((double)spike.getCenterX() + 0.5, spike.getHeight() + 1, (double)spike.getCenterZ() + 0.5, random.nextFloat() * 360.0f, 0.0f);
+        world.spawnEntity(endCrystalEntity);
+        this.setBlockState(world, new BlockPos(spike.getCenterX(), spike.getHeight(), spike.getCenterZ()), Blocks.BEDROCK.getDefaultState());
+    }
+
+    static class SpikeCache
+    extends CacheLoader<Long, List<Spike>> {
+        private SpikeCache() {
+        }
+
+        public List<Spike> load(Long l) {
+            List list = IntStream.range(0, 10).boxed().collect(Collectors.toList());
+            Collections.shuffle(list, new Random(l));
+            ArrayList _snowman2 = Lists.newArrayList();
+            for (int i = 0; i < 10; ++i) {
+                _snowman = MathHelper.floor(42.0 * Math.cos(2.0 * (-Math.PI + 0.3141592653589793 * (double)i)));
+                _snowman = MathHelper.floor(42.0 * Math.sin(2.0 * (-Math.PI + 0.3141592653589793 * (double)i)));
+                _snowman = (Integer)list.get(i);
+                _snowman = 2 + _snowman / 3;
+                _snowman = 76 + _snowman * 3;
+                boolean bl = _snowman == 1 || _snowman == 2;
+                _snowman2.add(new Spike(_snowman, _snowman, _snowman, _snowman, bl));
+            }
+            return _snowman2;
+        }
+
+        public /* synthetic */ Object load(Object object) throws Exception {
+            return this.load((Long)object);
+        }
+    }
+
+    public static class Spike {
+        public static final Codec<Spike> CODEC = RecordCodecBuilder.create(instance -> instance.group((App)Codec.INT.fieldOf("centerX").orElse((Object)0).forGetter(spike -> spike.centerX), (App)Codec.INT.fieldOf("centerZ").orElse((Object)0).forGetter(spike -> spike.centerZ), (App)Codec.INT.fieldOf("radius").orElse((Object)0).forGetter(spike -> spike.radius), (App)Codec.INT.fieldOf("height").orElse((Object)0).forGetter(spike -> spike.height), (App)Codec.BOOL.fieldOf("guarded").orElse((Object)false).forGetter(spike -> spike.guarded)).apply((Applicative)instance, Spike::new));
+        private final int centerX;
+        private final int centerZ;
+        private final int radius;
+        private final int height;
+        private final boolean guarded;
+        private final Box boundingBox;
+
+        public Spike(int centerX, int centerZ, int radius, int height, boolean guarded) {
+            this.centerX = centerX;
+            this.centerZ = centerZ;
+            this.radius = radius;
+            this.height = height;
+            this.guarded = guarded;
+            this.boundingBox = new Box(centerX - radius, 0.0, centerZ - radius, centerX + radius, 256.0, centerZ + radius);
+        }
+
+        public boolean isInChunk(BlockPos pos) {
+            return pos.getX() >> 4 == this.centerX >> 4 && pos.getZ() >> 4 == this.centerZ >> 4;
+        }
+
+        public int getCenterX() {
+            return this.centerX;
+        }
+
+        public int getCenterZ() {
+            return this.centerZ;
+        }
+
+        public int getRadius() {
+            return this.radius;
+        }
+
+        public int getHeight() {
+            return this.height;
+        }
+
+        public boolean isGuarded() {
+            return this.guarded;
+        }
+
+        public Box getBoundingBox() {
+            return this.boundingBox;
+        }
+    }
+}
+

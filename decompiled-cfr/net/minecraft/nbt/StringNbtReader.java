@@ -1,0 +1,270 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.annotations.VisibleForTesting
+ *  com.google.common.collect.Lists
+ *  com.mojang.brigadier.ImmutableStringReader
+ *  com.mojang.brigadier.Message
+ *  com.mojang.brigadier.StringReader
+ *  com.mojang.brigadier.exceptions.CommandSyntaxException
+ *  com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType
+ *  com.mojang.brigadier.exceptions.DynamicCommandExceptionType
+ *  com.mojang.brigadier.exceptions.SimpleCommandExceptionType
+ */
+package net.minecraft.nbt;
+
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Lists;
+import com.mojang.brigadier.ImmutableStringReader;
+import com.mojang.brigadier.Message;
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.Dynamic2CommandExceptionType;
+import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+import net.minecraft.nbt.AbstractNumberTag;
+import net.minecraft.nbt.ByteArrayTag;
+import net.minecraft.nbt.ByteTag;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
+import net.minecraft.nbt.FloatTag;
+import net.minecraft.nbt.IntArrayTag;
+import net.minecraft.nbt.IntTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.LongArrayTag;
+import net.minecraft.nbt.LongTag;
+import net.minecraft.nbt.ShortTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagReader;
+import net.minecraft.text.TranslatableText;
+
+public class StringNbtReader {
+    public static final SimpleCommandExceptionType TRAILING = new SimpleCommandExceptionType((Message)new TranslatableText("argument.nbt.trailing"));
+    public static final SimpleCommandExceptionType EXPECTED_KEY = new SimpleCommandExceptionType((Message)new TranslatableText("argument.nbt.expected.key"));
+    public static final SimpleCommandExceptionType EXPECTED_VALUE = new SimpleCommandExceptionType((Message)new TranslatableText("argument.nbt.expected.value"));
+    public static final Dynamic2CommandExceptionType LIST_MIXED = new Dynamic2CommandExceptionType((object, object2) -> new TranslatableText("argument.nbt.list.mixed", object, object2));
+    public static final Dynamic2CommandExceptionType ARRAY_MIXED = new Dynamic2CommandExceptionType((object, object2) -> new TranslatableText("argument.nbt.array.mixed", object, object2));
+    public static final DynamicCommandExceptionType ARRAY_INVALID = new DynamicCommandExceptionType(object -> new TranslatableText("argument.nbt.array.invalid", object));
+    private static final Pattern DOUBLE_PATTERN_IMPLICIT = Pattern.compile("[-+]?(?:[0-9]+[.]|[0-9]*[.][0-9]+)(?:e[-+]?[0-9]+)?", 2);
+    private static final Pattern DOUBLE_PATTERN = Pattern.compile("[-+]?(?:[0-9]+[.]?|[0-9]*[.][0-9]+)(?:e[-+]?[0-9]+)?d", 2);
+    private static final Pattern FLOAT_PATTERN = Pattern.compile("[-+]?(?:[0-9]+[.]?|[0-9]*[.][0-9]+)(?:e[-+]?[0-9]+)?f", 2);
+    private static final Pattern BYTE_PATTERN = Pattern.compile("[-+]?(?:0|[1-9][0-9]*)b", 2);
+    private static final Pattern LONG_PATTERN = Pattern.compile("[-+]?(?:0|[1-9][0-9]*)l", 2);
+    private static final Pattern SHORT_PATTERN = Pattern.compile("[-+]?(?:0|[1-9][0-9]*)s", 2);
+    private static final Pattern INT_PATTERN = Pattern.compile("[-+]?(?:0|[1-9][0-9]*)");
+    private final StringReader reader;
+
+    public static CompoundTag parse(String string) throws CommandSyntaxException {
+        return new StringNbtReader(new StringReader(string)).readCompoundTag();
+    }
+
+    @VisibleForTesting
+    CompoundTag readCompoundTag() throws CommandSyntaxException {
+        CompoundTag compoundTag = this.parseCompoundTag();
+        this.reader.skipWhitespace();
+        if (this.reader.canRead()) {
+            throw TRAILING.createWithContext((ImmutableStringReader)this.reader);
+        }
+        return compoundTag;
+    }
+
+    public StringNbtReader(StringReader reader) {
+        this.reader = reader;
+    }
+
+    protected String readString() throws CommandSyntaxException {
+        this.reader.skipWhitespace();
+        if (!this.reader.canRead()) {
+            throw EXPECTED_KEY.createWithContext((ImmutableStringReader)this.reader);
+        }
+        return this.reader.readString();
+    }
+
+    protected Tag parseTagPrimitive() throws CommandSyntaxException {
+        this.reader.skipWhitespace();
+        int n = this.reader.getCursor();
+        if (StringReader.isQuotedStringStart((char)this.reader.peek())) {
+            return StringTag.of(this.reader.readQuotedString());
+        }
+        String _snowman2 = this.reader.readUnquotedString();
+        if (_snowman2.isEmpty()) {
+            this.reader.setCursor(n);
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        return this.parsePrimitive(_snowman2);
+    }
+
+    private Tag parsePrimitive(String input) {
+        try {
+            if (FLOAT_PATTERN.matcher(input).matches()) {
+                return FloatTag.of(Float.parseFloat(input.substring(0, input.length() - 1)));
+            }
+            if (BYTE_PATTERN.matcher(input).matches()) {
+                return ByteTag.of(Byte.parseByte(input.substring(0, input.length() - 1)));
+            }
+            if (LONG_PATTERN.matcher(input).matches()) {
+                return LongTag.of(Long.parseLong(input.substring(0, input.length() - 1)));
+            }
+            if (SHORT_PATTERN.matcher(input).matches()) {
+                return ShortTag.of(Short.parseShort(input.substring(0, input.length() - 1)));
+            }
+            if (INT_PATTERN.matcher(input).matches()) {
+                return IntTag.of(Integer.parseInt(input));
+            }
+            if (DOUBLE_PATTERN.matcher(input).matches()) {
+                return DoubleTag.of(Double.parseDouble(input.substring(0, input.length() - 1)));
+            }
+            if (DOUBLE_PATTERN_IMPLICIT.matcher(input).matches()) {
+                return DoubleTag.of(Double.parseDouble(input));
+            }
+            if ("true".equalsIgnoreCase(input)) {
+                return ByteTag.ONE;
+            }
+            if ("false".equalsIgnoreCase(input)) {
+                return ByteTag.ZERO;
+            }
+        }
+        catch (NumberFormatException numberFormatException) {
+            // empty catch block
+        }
+        return StringTag.of(input);
+    }
+
+    public Tag parseTag() throws CommandSyntaxException {
+        this.reader.skipWhitespace();
+        if (!this.reader.canRead()) {
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        char c = this.reader.peek();
+        if (c == '{') {
+            return this.parseCompoundTag();
+        }
+        if (c == '[') {
+            return this.parseTagArray();
+        }
+        return this.parseTagPrimitive();
+    }
+
+    protected Tag parseTagArray() throws CommandSyntaxException {
+        if (this.reader.canRead(3) && !StringReader.isQuotedStringStart((char)this.reader.peek(1)) && this.reader.peek(2) == ';') {
+            return this.parseTagPrimitiveArray();
+        }
+        return this.parseListTag();
+    }
+
+    public CompoundTag parseCompoundTag() throws CommandSyntaxException {
+        this.expect('{');
+        CompoundTag compoundTag = new CompoundTag();
+        this.reader.skipWhitespace();
+        while (this.reader.canRead() && this.reader.peek() != '}') {
+            int n = this.reader.getCursor();
+            String _snowman2 = this.readString();
+            if (_snowman2.isEmpty()) {
+                this.reader.setCursor(n);
+                throw EXPECTED_KEY.createWithContext((ImmutableStringReader)this.reader);
+            }
+            this.expect(':');
+            compoundTag.put(_snowman2, this.parseTag());
+            if (!this.readComma()) break;
+            if (this.reader.canRead()) continue;
+            throw EXPECTED_KEY.createWithContext((ImmutableStringReader)this.reader);
+        }
+        this.expect('}');
+        return compoundTag;
+    }
+
+    private Tag parseListTag() throws CommandSyntaxException {
+        this.expect('[');
+        this.reader.skipWhitespace();
+        if (!this.reader.canRead()) {
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        ListTag listTag = new ListTag();
+        TagReader<?> _snowman2 = null;
+        while (this.reader.peek() != ']') {
+            int n = this.reader.getCursor();
+            Tag _snowman3 = this.parseTag();
+            TagReader<?> _snowman4 = _snowman3.getReader();
+            if (_snowman2 == null) {
+                _snowman2 = _snowman4;
+            } else if (_snowman4 != _snowman2) {
+                this.reader.setCursor(n);
+                throw LIST_MIXED.createWithContext((ImmutableStringReader)this.reader, (Object)_snowman4.getCommandFeedbackName(), (Object)_snowman2.getCommandFeedbackName());
+            }
+            listTag.add(_snowman3);
+            if (!this.readComma()) break;
+            if (this.reader.canRead()) continue;
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        this.expect(']');
+        return listTag;
+    }
+
+    private Tag parseTagPrimitiveArray() throws CommandSyntaxException {
+        this.expect('[');
+        int n = this.reader.getCursor();
+        char _snowman2 = this.reader.read();
+        this.reader.read();
+        this.reader.skipWhitespace();
+        if (!this.reader.canRead()) {
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        if (_snowman2 == 'B') {
+            return new ByteArrayTag(this.readArray(ByteArrayTag.READER, ByteTag.READER));
+        }
+        if (_snowman2 == 'L') {
+            return new LongArrayTag(this.readArray(LongArrayTag.READER, LongTag.READER));
+        }
+        if (_snowman2 == 'I') {
+            return new IntArrayTag(this.readArray(IntArrayTag.READER, IntTag.READER));
+        }
+        this.reader.setCursor(n);
+        throw ARRAY_INVALID.createWithContext((ImmutableStringReader)this.reader, (Object)String.valueOf(_snowman2));
+    }
+
+    private <T extends Number> List<T> readArray(TagReader<?> arrayTypeReader, TagReader<?> typeReader) throws CommandSyntaxException {
+        ArrayList arrayList = Lists.newArrayList();
+        while (this.reader.peek() != ']') {
+            int n = this.reader.getCursor();
+            Tag _snowman2 = this.parseTag();
+            TagReader<?> _snowman3 = _snowman2.getReader();
+            if (_snowman3 != typeReader) {
+                this.reader.setCursor(n);
+                throw ARRAY_MIXED.createWithContext((ImmutableStringReader)this.reader, (Object)_snowman3.getCommandFeedbackName(), (Object)arrayTypeReader.getCommandFeedbackName());
+            }
+            if (typeReader == ByteTag.READER) {
+                arrayList.add(((AbstractNumberTag)_snowman2).getByte());
+            } else if (typeReader == LongTag.READER) {
+                arrayList.add(((AbstractNumberTag)_snowman2).getLong());
+            } else {
+                arrayList.add(((AbstractNumberTag)_snowman2).getInt());
+            }
+            if (!this.readComma()) break;
+            if (this.reader.canRead()) continue;
+            throw EXPECTED_VALUE.createWithContext((ImmutableStringReader)this.reader);
+        }
+        this.expect(']');
+        return arrayList;
+    }
+
+    private boolean readComma() {
+        this.reader.skipWhitespace();
+        if (this.reader.canRead() && this.reader.peek() == ',') {
+            this.reader.skip();
+            this.reader.skipWhitespace();
+            return true;
+        }
+        return false;
+    }
+
+    private void expect(char c) throws CommandSyntaxException {
+        this.reader.skipWhitespace();
+        this.reader.expect(c);
+    }
+}
+

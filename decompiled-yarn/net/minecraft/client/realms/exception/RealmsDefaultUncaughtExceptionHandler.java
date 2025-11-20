@@ -1,0 +1,18 @@
+package net.minecraft.client.realms.exception;
+
+import java.lang.Thread.UncaughtExceptionHandler;
+import org.apache.logging.log4j.Logger;
+
+public class RealmsDefaultUncaughtExceptionHandler implements UncaughtExceptionHandler {
+   private final Logger logger;
+
+   public RealmsDefaultUncaughtExceptionHandler(Logger logger) {
+      this.logger = logger;
+   }
+
+   @Override
+   public void uncaughtException(Thread t, Throwable e) {
+      this.logger.error("Caught previously unhandled exception :");
+      this.logger.error(e);
+   }
+}

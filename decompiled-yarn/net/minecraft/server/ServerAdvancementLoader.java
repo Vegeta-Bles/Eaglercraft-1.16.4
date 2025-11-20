@@ -1,0 +1,67 @@
+package net.minecraft.server;
+
+import com.google.common.collect.Maps;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import java.util.Collection;
+import java.util.Map;
+import javax.annotation.Nullable;
+import net.minecraft.advancement.Advancement;
+import net.minecraft.advancement.AdvancementManager;
+import net.minecraft.advancement.AdvancementPositioner;
+import net.minecraft.loot.condition.LootConditionManager;
+import net.minecraft.predicate.entity.AdvancementEntityPredicateDeserializer;
+import net.minecraft.resource.JsonDataLoader;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.JsonHelper;
+import net.minecraft.util.profiler.Profiler;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class ServerAdvancementLoader extends JsonDataLoader {
+   private static final Logger LOGGER = LogManager.getLogger();
+   private static final Gson GSON = new GsonBuilder().create();
+   private AdvancementManager manager = new AdvancementManager();
+   private final LootConditionManager conditionManager;
+
+   public ServerAdvancementLoader(LootConditionManager conditionManager) {
+      super(GSON, "advancements");
+      this.conditionManager = conditionManager;
+   }
+
+   protected void apply(Map<Identifier, JsonElement> _snowman, ResourceManager _snowman, Profiler _snowman) {
+      Map<Identifier, Advancement.Task> _snowmanxxx = Maps.newHashMap();
+      _snowman.forEach((_snowmanxxxxxx, _snowmanxxxxx) -> {
+         try {
+            JsonObject _snowmanxxx = JsonHelper.asObject(_snowmanxxxxx, "advancement");
+            Advancement.Task _snowmanxxxxx = Advancement.Task.fromJson(_snowmanxxx, new AdvancementEntityPredicateDeserializer(_snowmanxxxxxx, this.conditionManager));
+            _snowman.put(_snowmanxxxxxx, _snowmanxxxxx);
+         } catch (IllegalArgumentException | JsonParseException var6) {
+            LOGGER.error("Parsing error loading custom advancement {}: {}", _snowmanxxxxxx, var6.getMessage());
+         }
+      });
+      AdvancementManager _snowmanxxxx = new AdvancementManager();
+      _snowmanxxxx.load(_snowmanxxx);
+
+      for (Advancement _snowmanxxxxx : _snowmanxxxx.getRoots()) {
+         if (_snowmanxxxxx.getDisplay() != null) {
+            AdvancementPositioner.arrangeForTree(_snowmanxxxxx);
+         }
+      }
+
+      this.manager = _snowmanxxxx;
+   }
+
+   @Nullable
+   public Advancement get(Identifier id) {
+      return this.manager.get(id);
+   }
+
+   public Collection<Advancement> getAdvancements() {
+      return this.manager.getAdvancements();
+   }
+}

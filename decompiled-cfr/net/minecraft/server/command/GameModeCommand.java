@@ -1,0 +1,58 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.brigadier.CommandDispatcher
+ *  com.mojang.brigadier.builder.LiteralArgumentBuilder
+ *  com.mojang.brigadier.context.CommandContext
+ */
+package net.minecraft.server.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import java.util.Collection;
+import java.util.Collections;
+import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Util;
+import net.minecraft.world.GameMode;
+import net.minecraft.world.GameRules;
+
+public class GameModeCommand {
+    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+        LiteralArgumentBuilder literalArgumentBuilder = (LiteralArgumentBuilder)CommandManager.literal("gamemode").requires(serverCommandSource -> serverCommandSource.hasPermissionLevel(2));
+        for (GameMode gameMode : GameMode.values()) {
+            if (gameMode == GameMode.NOT_SET) continue;
+            literalArgumentBuilder.then(((LiteralArgumentBuilder)CommandManager.literal(gameMode.getName()).executes(commandContext -> GameModeCommand.execute((CommandContext<ServerCommandSource>)commandContext, Collections.singleton(((ServerCommandSource)commandContext.getSource()).getPlayer()), gameMode))).then(CommandManager.argument("target", EntityArgumentType.players()).executes(commandContext -> GameModeCommand.execute((CommandContext<ServerCommandSource>)commandContext, EntityArgumentType.getPlayers((CommandContext<ServerCommandSource>)commandContext, "target"), gameMode))));
+        }
+        dispatcher.register(literalArgumentBuilder);
+    }
+
+    private static void setGameMode(ServerCommandSource source, ServerPlayerEntity player, GameMode gameMode) {
+        TranslatableText translatableText = new TranslatableText("gameMode." + gameMode.getName());
+        if (source.getEntity() == player) {
+            source.sendFeedback(new TranslatableText("commands.gamemode.success.self", translatableText), true);
+        } else {
+            if (source.getWorld().getGameRules().getBoolean(GameRules.SEND_COMMAND_FEEDBACK)) {
+                player.sendSystemMessage(new TranslatableText("gameMode.changed", translatableText), Util.NIL_UUID);
+            }
+            source.sendFeedback(new TranslatableText("commands.gamemode.success.other", player.getDisplayName(), translatableText), true);
+        }
+    }
+
+    private static int execute(CommandContext<ServerCommandSource> context, Collection<ServerPlayerEntity> targets, GameMode gameMode) {
+        int n = 0;
+        for (ServerPlayerEntity serverPlayerEntity : targets) {
+            if (serverPlayerEntity.interactionManager.getGameMode() == gameMode) continue;
+            serverPlayerEntity.setGameMode(gameMode);
+            GameModeCommand.setGameMode((ServerCommandSource)context.getSource(), serverPlayerEntity, gameMode);
+            ++n;
+        }
+        return n;
+    }
+}
+

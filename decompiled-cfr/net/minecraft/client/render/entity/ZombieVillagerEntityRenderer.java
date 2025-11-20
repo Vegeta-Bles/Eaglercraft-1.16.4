@@ -1,0 +1,41 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.entity;
+
+import net.minecraft.client.render.entity.BipedEntityRenderer;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.render.entity.feature.ArmorFeatureRenderer;
+import net.minecraft.client.render.entity.feature.VillagerClothingFeatureRenderer;
+import net.minecraft.client.render.entity.model.ZombieVillagerEntityModel;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.ZombieVillagerEntity;
+import net.minecraft.resource.ReloadableResourceManager;
+import net.minecraft.util.Identifier;
+
+public class ZombieVillagerEntityRenderer
+extends BipedEntityRenderer<ZombieVillagerEntity, ZombieVillagerEntityModel<ZombieVillagerEntity>> {
+    private static final Identifier TEXTURE = new Identifier("textures/entity/zombie_villager/zombie_villager.png");
+
+    public ZombieVillagerEntityRenderer(EntityRenderDispatcher dispatcher, ReloadableResourceManager reloadableResourceManager) {
+        super(dispatcher, new ZombieVillagerEntityModel(0.0f, false), 0.5f);
+        this.addFeature(new ArmorFeatureRenderer(this, new ZombieVillagerEntityModel(0.5f, true), new ZombieVillagerEntityModel(1.0f, true)));
+        this.addFeature(new VillagerClothingFeatureRenderer<ZombieVillagerEntity, ZombieVillagerEntityModel<ZombieVillagerEntity>>(this, reloadableResourceManager, "zombie_villager"));
+    }
+
+    @Override
+    public Identifier getTexture(ZombieVillagerEntity zombieVillagerEntity) {
+        return TEXTURE;
+    }
+
+    @Override
+    protected boolean isShaking(ZombieVillagerEntity zombieVillagerEntity) {
+        return zombieVillagerEntity.isConverting();
+    }
+
+    @Override
+    protected /* synthetic */ boolean isShaking(LivingEntity entity) {
+        return this.isShaking((ZombieVillagerEntity)entity);
+    }
+}
+

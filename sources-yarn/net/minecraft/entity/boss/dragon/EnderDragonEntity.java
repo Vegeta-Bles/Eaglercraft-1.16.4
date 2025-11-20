@@ -1,0 +1,895 @@
+package net.minecraft.entity.boss.dragon;
+
+import com.google.common.collect.Lists;
+import java.util.List;
+import javax.annotation.Nullable;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Material;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ExperienceOrbEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.MovementType;
+import net.minecraft.entity.ai.TargetPredicate;
+import net.minecraft.entity.ai.pathing.Path;
+import net.minecraft.entity.ai.pathing.PathMinHeap;
+import net.minecraft.entity.ai.pathing.PathNode;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.boss.dragon.phase.Phase;
+import net.minecraft.entity.boss.dragon.phase.PhaseManager;
+import net.minecraft.entity.boss.dragon.phase.PhaseType;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.damage.EntityDamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.decoration.EndCrystalEntity;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.mob.Monster;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.predicate.entity.EntityPredicates;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.tag.BlockTags;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameRules;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
+import net.minecraft.world.gen.feature.EndPortalFeature;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class EnderDragonEntity extends MobEntity implements Monster {
+   private static final Logger LOGGER = LogManager.getLogger();
+   public static final TrackedData<Integer> PHASE_TYPE = DataTracker.registerData(EnderDragonEntity.class, TrackedDataHandlerRegistry.INTEGER);
+   private static final TargetPredicate CLOSE_PLAYER_PREDICATE = new TargetPredicate().setBaseMaxDistance(64.0);
+   public final double[][] segmentCircularBuffer = new double[64][3];
+   public int latestSegment = -1;
+   private final EnderDragonPart[] parts;
+   public final EnderDragonPart partHead;
+   private final EnderDragonPart partNeck;
+   private final EnderDragonPart partBody;
+   private final EnderDragonPart partTail1;
+   private final EnderDragonPart partTail2;
+   private final EnderDragonPart partTail3;
+   private final EnderDragonPart partWingRight;
+   private final EnderDragonPart partWingLeft;
+   public float prevWingPosition;
+   public float wingPosition;
+   public boolean slowedDownByBlock;
+   public int ticksSinceDeath;
+   public float field_20865;
+   @Nullable
+   public EndCrystalEntity connectedCrystal;
+   @Nullable
+   private final EnderDragonFight fight;
+   private final PhaseManager phaseManager;
+   private int ticksUntilNextGrowl = 100;
+   private int field_7029;
+   private final PathNode[] pathNodes = new PathNode[24];
+   private final int[] pathNodeConnections = new int[24];
+   private final PathMinHeap pathHeap = new PathMinHeap();
+
+   public EnderDragonEntity(EntityType<? extends EnderDragonEntity> arg, World arg2) {
+      super(EntityType.ENDER_DRAGON, arg2);
+      this.partHead = new EnderDragonPart(this, "head", 1.0F, 1.0F);
+      this.partNeck = new EnderDragonPart(this, "neck", 3.0F, 3.0F);
+      this.partBody = new EnderDragonPart(this, "body", 5.0F, 3.0F);
+      this.partTail1 = new EnderDragonPart(this, "tail", 2.0F, 2.0F);
+      this.partTail2 = new EnderDragonPart(this, "tail", 2.0F, 2.0F);
+      this.partTail3 = new EnderDragonPart(this, "tail", 2.0F, 2.0F);
+      this.partWingRight = new EnderDragonPart(this, "wing", 4.0F, 2.0F);
+      this.partWingLeft = new EnderDragonPart(this, "wing", 4.0F, 2.0F);
+      this.parts = new EnderDragonPart[]{
+         this.partHead, this.partNeck, this.partBody, this.partTail1, this.partTail2, this.partTail3, this.partWingRight, this.partWingLeft
+      };
+      this.setHealth(this.getMaxHealth());
+      this.noClip = true;
+      this.ignoreCameraFrustum = true;
+      if (arg2 instanceof ServerWorld) {
+         this.fight = ((ServerWorld)arg2).getEnderDragonFight();
+      } else {
+         this.fight = null;
+      }
+
+      this.phaseManager = new PhaseManager(this);
+   }
+
+   public static DefaultAttributeContainer.Builder createEnderDragonAttributes() {
+      return MobEntity.createMobAttributes().add(EntityAttributes.GENERIC_MAX_HEALTH, 200.0);
+   }
+
+   @Override
+   protected void initDataTracker() {
+      super.initDataTracker();
+      this.getDataTracker().startTracking(PHASE_TYPE, PhaseType.HOVER.getTypeId());
+   }
+
+   public double[] getSegmentProperties(int segmentNumber, float tickDelta) {
+      if (this.isDead()) {
+         tickDelta = 0.0F;
+      }
+
+      tickDelta = 1.0F - tickDelta;
+      int j = this.latestSegment - segmentNumber & 63;
+      int k = this.latestSegment - segmentNumber - 1 & 63;
+      double[] ds = new double[3];
+      double d = this.segmentCircularBuffer[j][0];
+      double e = MathHelper.wrapDegrees(this.segmentCircularBuffer[k][0] - d);
+      ds[0] = d + e * (double)tickDelta;
+      d = this.segmentCircularBuffer[j][1];
+      e = this.segmentCircularBuffer[k][1] - d;
+      ds[1] = d + e * (double)tickDelta;
+      ds[2] = MathHelper.lerp((double)tickDelta, this.segmentCircularBuffer[j][2], this.segmentCircularBuffer[k][2]);
+      return ds;
+   }
+
+   @Override
+   public void tickMovement() {
+      if (this.world.isClient) {
+         this.setHealth(this.getHealth());
+         if (!this.isSilent()) {
+            float f = MathHelper.cos(this.wingPosition * (float) (Math.PI * 2));
+            float g = MathHelper.cos(this.prevWingPosition * (float) (Math.PI * 2));
+            if (g <= -0.3F && f >= -0.3F) {
+               this.world
+                  .playSound(
+                     this.getX(),
+                     this.getY(),
+                     this.getZ(),
+                     SoundEvents.ENTITY_ENDER_DRAGON_FLAP,
+                     this.getSoundCategory(),
+                     5.0F,
+                     0.8F + this.random.nextFloat() * 0.3F,
+                     false
+                  );
+            }
+
+            if (!this.phaseManager.getCurrent().isSittingOrHovering() && --this.ticksUntilNextGrowl < 0) {
+               this.world
+                  .playSound(
+                     this.getX(),
+                     this.getY(),
+                     this.getZ(),
+                     SoundEvents.ENTITY_ENDER_DRAGON_GROWL,
+                     this.getSoundCategory(),
+                     2.5F,
+                     0.8F + this.random.nextFloat() * 0.3F,
+                     false
+                  );
+               this.ticksUntilNextGrowl = 200 + this.random.nextInt(200);
+            }
+         }
+      }
+
+      this.prevWingPosition = this.wingPosition;
+      if (this.isDead()) {
+         float h = (this.random.nextFloat() - 0.5F) * 8.0F;
+         float i = (this.random.nextFloat() - 0.5F) * 4.0F;
+         float j = (this.random.nextFloat() - 0.5F) * 8.0F;
+         this.world.addParticle(ParticleTypes.EXPLOSION, this.getX() + (double)h, this.getY() + 2.0 + (double)i, this.getZ() + (double)j, 0.0, 0.0, 0.0);
+      } else {
+         this.tickWithEndCrystals();
+         Vec3d lv = this.getVelocity();
+         float k = 0.2F / (MathHelper.sqrt(squaredHorizontalLength(lv)) * 10.0F + 1.0F);
+         k *= (float)Math.pow(2.0, lv.y);
+         if (this.phaseManager.getCurrent().isSittingOrHovering()) {
+            this.wingPosition += 0.1F;
+         } else if (this.slowedDownByBlock) {
+            this.wingPosition += k * 0.5F;
+         } else {
+            this.wingPosition += k;
+         }
+
+         this.yaw = MathHelper.wrapDegrees(this.yaw);
+         if (this.isAiDisabled()) {
+            this.wingPosition = 0.5F;
+         } else {
+            if (this.latestSegment < 0) {
+               for (int l = 0; l < this.segmentCircularBuffer.length; l++) {
+                  this.segmentCircularBuffer[l][0] = (double)this.yaw;
+                  this.segmentCircularBuffer[l][1] = this.getY();
+               }
+            }
+
+            if (++this.latestSegment == this.segmentCircularBuffer.length) {
+               this.latestSegment = 0;
+            }
+
+            this.segmentCircularBuffer[this.latestSegment][0] = (double)this.yaw;
+            this.segmentCircularBuffer[this.latestSegment][1] = this.getY();
+            if (this.world.isClient) {
+               if (this.bodyTrackingIncrements > 0) {
+                  double d = this.getX() + (this.serverX - this.getX()) / (double)this.bodyTrackingIncrements;
+                  double e = this.getY() + (this.serverY - this.getY()) / (double)this.bodyTrackingIncrements;
+                  double m = this.getZ() + (this.serverZ - this.getZ()) / (double)this.bodyTrackingIncrements;
+                  double n = MathHelper.wrapDegrees(this.serverYaw - (double)this.yaw);
+                  this.yaw = (float)((double)this.yaw + n / (double)this.bodyTrackingIncrements);
+                  this.pitch = (float)((double)this.pitch + (this.serverPitch - (double)this.pitch) / (double)this.bodyTrackingIncrements);
+                  this.bodyTrackingIncrements--;
+                  this.updatePosition(d, e, m);
+                  this.setRotation(this.yaw, this.pitch);
+               }
+
+               this.phaseManager.getCurrent().clientTick();
+            } else {
+               Phase lv2 = this.phaseManager.getCurrent();
+               lv2.serverTick();
+               if (this.phaseManager.getCurrent() != lv2) {
+                  lv2 = this.phaseManager.getCurrent();
+                  lv2.serverTick();
+               }
+
+               Vec3d lv3 = lv2.getTarget();
+               if (lv3 != null) {
+                  double o = lv3.x - this.getX();
+                  double p = lv3.y - this.getY();
+                  double q = lv3.z - this.getZ();
+                  double r = o * o + p * p + q * q;
+                  float s = lv2.getMaxYAcceleration();
+                  double t = (double)MathHelper.sqrt(o * o + q * q);
+                  if (t > 0.0) {
+                     p = MathHelper.clamp(p / t, (double)(-s), (double)s);
+                  }
+
+                  this.setVelocity(this.getVelocity().add(0.0, p * 0.01, 0.0));
+                  this.yaw = MathHelper.wrapDegrees(this.yaw);
+                  double u = MathHelper.clamp(MathHelper.wrapDegrees(180.0 - MathHelper.atan2(o, q) * 180.0F / (float)Math.PI - (double)this.yaw), -50.0, 50.0);
+                  Vec3d lv4 = lv3.subtract(this.getX(), this.getY(), this.getZ()).normalize();
+                  Vec3d lv5 = new Vec3d(
+                        (double)MathHelper.sin(this.yaw * (float) (Math.PI / 180.0)),
+                        this.getVelocity().y,
+                        (double)(-MathHelper.cos(this.yaw * (float) (Math.PI / 180.0)))
+                     )
+                     .normalize();
+                  float v = Math.max(((float)lv5.dotProduct(lv4) + 0.5F) / 1.5F, 0.0F);
+                  this.field_20865 *= 0.8F;
+                  this.field_20865 = (float)((double)this.field_20865 + u * (double)lv2.method_6847());
+                  this.yaw = this.yaw + this.field_20865 * 0.1F;
+                  float w = (float)(2.0 / (r + 1.0));
+                  float x = 0.06F;
+                  this.updateVelocity(0.06F * (v * w + (1.0F - w)), new Vec3d(0.0, 0.0, -1.0));
+                  if (this.slowedDownByBlock) {
+                     this.move(MovementType.SELF, this.getVelocity().multiply(0.8F));
+                  } else {
+                     this.move(MovementType.SELF, this.getVelocity());
+                  }
+
+                  Vec3d lv6 = this.getVelocity().normalize();
+                  double y = 0.8 + 0.15 * (lv6.dotProduct(lv5) + 1.0) / 2.0;
+                  this.setVelocity(this.getVelocity().multiply(y, 0.91F, y));
+               }
+            }
+
+            this.bodyYaw = this.yaw;
+            Vec3d[] lvs = new Vec3d[this.parts.length];
+
+            for (int z = 0; z < this.parts.length; z++) {
+               lvs[z] = new Vec3d(this.parts[z].getX(), this.parts[z].getY(), this.parts[z].getZ());
+            }
+
+            float aa = (float)(this.getSegmentProperties(5, 1.0F)[1] - this.getSegmentProperties(10, 1.0F)[1]) * 10.0F * (float) (Math.PI / 180.0);
+            float ab = MathHelper.cos(aa);
+            float ac = MathHelper.sin(aa);
+            float ad = this.yaw * (float) (Math.PI / 180.0);
+            float ae = MathHelper.sin(ad);
+            float af = MathHelper.cos(ad);
+            this.movePart(this.partBody, (double)(ae * 0.5F), 0.0, (double)(-af * 0.5F));
+            this.movePart(this.partWingRight, (double)(af * 4.5F), 2.0, (double)(ae * 4.5F));
+            this.movePart(this.partWingLeft, (double)(af * -4.5F), 2.0, (double)(ae * -4.5F));
+            if (!this.world.isClient && this.hurtTime == 0) {
+               this.launchLivingEntities(
+                  this.world
+                     .getOtherEntities(
+                        this, this.partWingRight.getBoundingBox().expand(4.0, 2.0, 4.0).offset(0.0, -2.0, 0.0), EntityPredicates.EXCEPT_CREATIVE_OR_SPECTATOR
+                     )
+               );
+               this.launchLivingEntities(
+                  this.world
+                     .getOtherEntities(
+                        this, this.partWingLeft.getBoundingBox().expand(4.0, 2.0, 4.0).offset(0.0, -2.0, 0.0), EntityPredicates.EXCEPT_CREATIVE_OR_SPECTATOR
+                     )
+               );
+               this.damageLivingEntities(
+                  this.world.getOtherEntities(this, this.partHead.getBoundingBox().expand(1.0), EntityPredicates.EXCEPT_CREATIVE_OR_SPECTATOR)
+               );
+               this.damageLivingEntities(
+                  this.world.getOtherEntities(this, this.partNeck.getBoundingBox().expand(1.0), EntityPredicates.EXCEPT_CREATIVE_OR_SPECTATOR)
+               );
+            }
+
+            float ag = MathHelper.sin(this.yaw * (float) (Math.PI / 180.0) - this.field_20865 * 0.01F);
+            float ah = MathHelper.cos(this.yaw * (float) (Math.PI / 180.0) - this.field_20865 * 0.01F);
+            float ai = this.method_6820();
+            this.movePart(this.partHead, (double)(ag * 6.5F * ab), (double)(ai + ac * 6.5F), (double)(-ah * 6.5F * ab));
+            this.movePart(this.partNeck, (double)(ag * 5.5F * ab), (double)(ai + ac * 5.5F), (double)(-ah * 5.5F * ab));
+            double[] ds = this.getSegmentProperties(5, 1.0F);
+
+            for (int aj = 0; aj < 3; aj++) {
+               EnderDragonPart lv7 = null;
+               if (aj == 0) {
+                  lv7 = this.partTail1;
+               }
+
+               if (aj == 1) {
+                  lv7 = this.partTail2;
+               }
+
+               if (aj == 2) {
+                  lv7 = this.partTail3;
+               }
+
+               double[] es = this.getSegmentProperties(12 + aj * 2, 1.0F);
+               float ak = this.yaw * (float) (Math.PI / 180.0) + this.wrapYawChange(es[0] - ds[0]) * (float) (Math.PI / 180.0);
+               float al = MathHelper.sin(ak);
+               float am = MathHelper.cos(ak);
+               float an = 1.5F;
+               float ao = (float)(aj + 1) * 2.0F;
+               this.movePart(lv7, (double)(-(ae * 1.5F + al * ao) * ab), es[1] - ds[1] - (double)((ao + 1.5F) * ac) + 1.5, (double)((af * 1.5F + am * ao) * ab));
+            }
+
+            if (!this.world.isClient) {
+               this.slowedDownByBlock = this.destroyBlocks(this.partHead.getBoundingBox())
+                  | this.destroyBlocks(this.partNeck.getBoundingBox())
+                  | this.destroyBlocks(this.partBody.getBoundingBox());
+               if (this.fight != null) {
+                  this.fight.updateFight(this);
+               }
+            }
+
+            for (int ap = 0; ap < this.parts.length; ap++) {
+               this.parts[ap].prevX = lvs[ap].x;
+               this.parts[ap].prevY = lvs[ap].y;
+               this.parts[ap].prevZ = lvs[ap].z;
+               this.parts[ap].lastRenderX = lvs[ap].x;
+               this.parts[ap].lastRenderY = lvs[ap].y;
+               this.parts[ap].lastRenderZ = lvs[ap].z;
+            }
+         }
+      }
+   }
+
+   private void movePart(EnderDragonPart arg, double dx, double dy, double dz) {
+      arg.updatePosition(this.getX() + dx, this.getY() + dy, this.getZ() + dz);
+   }
+
+   private float method_6820() {
+      if (this.phaseManager.getCurrent().isSittingOrHovering()) {
+         return -1.0F;
+      } else {
+         double[] ds = this.getSegmentProperties(5, 1.0F);
+         double[] es = this.getSegmentProperties(0, 1.0F);
+         return (float)(ds[1] - es[1]);
+      }
+   }
+
+   private void tickWithEndCrystals() {
+      if (this.connectedCrystal != null) {
+         if (this.connectedCrystal.removed) {
+            this.connectedCrystal = null;
+         } else if (this.age % 10 == 0 && this.getHealth() < this.getMaxHealth()) {
+            this.setHealth(this.getHealth() + 1.0F);
+         }
+      }
+
+      if (this.random.nextInt(10) == 0) {
+         List<EndCrystalEntity> list = this.world.getNonSpectatingEntities(EndCrystalEntity.class, this.getBoundingBox().expand(32.0));
+         EndCrystalEntity lv = null;
+         double d = Double.MAX_VALUE;
+
+         for (EndCrystalEntity lv2 : list) {
+            double e = lv2.squaredDistanceTo(this);
+            if (e < d) {
+               d = e;
+               lv = lv2;
+            }
+         }
+
+         this.connectedCrystal = lv;
+      }
+   }
+
+   private void launchLivingEntities(List<Entity> entities) {
+      double d = (this.partBody.getBoundingBox().minX + this.partBody.getBoundingBox().maxX) / 2.0;
+      double e = (this.partBody.getBoundingBox().minZ + this.partBody.getBoundingBox().maxZ) / 2.0;
+
+      for (Entity lv : entities) {
+         if (lv instanceof LivingEntity) {
+            double f = lv.getX() - d;
+            double g = lv.getZ() - e;
+            double h = Math.max(f * f + g * g, 0.1);
+            lv.addVelocity(f / h * 4.0, 0.2F, g / h * 4.0);
+            if (!this.phaseManager.getCurrent().isSittingOrHovering() && ((LivingEntity)lv).getLastAttackedTime() < lv.age - 2) {
+               lv.damage(DamageSource.mob(this), 5.0F);
+               this.dealDamage(this, lv);
+            }
+         }
+      }
+   }
+
+   private void damageLivingEntities(List<Entity> entities) {
+      for (Entity lv : entities) {
+         if (lv instanceof LivingEntity) {
+            lv.damage(DamageSource.mob(this), 10.0F);
+            this.dealDamage(this, lv);
+         }
+      }
+   }
+
+   private float wrapYawChange(double yawDegrees) {
+      return (float)MathHelper.wrapDegrees(yawDegrees);
+   }
+
+   private boolean destroyBlocks(Box arg) {
+      int i = MathHelper.floor(arg.minX);
+      int j = MathHelper.floor(arg.minY);
+      int k = MathHelper.floor(arg.minZ);
+      int l = MathHelper.floor(arg.maxX);
+      int m = MathHelper.floor(arg.maxY);
+      int n = MathHelper.floor(arg.maxZ);
+      boolean bl = false;
+      boolean bl2 = false;
+
+      for (int o = i; o <= l; o++) {
+         for (int p = j; p <= m; p++) {
+            for (int q = k; q <= n; q++) {
+               BlockPos lv = new BlockPos(o, p, q);
+               BlockState lv2 = this.world.getBlockState(lv);
+               Block lv3 = lv2.getBlock();
+               if (!lv2.isAir() && lv2.getMaterial() != Material.FIRE) {
+                  if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING) && !BlockTags.DRAGON_IMMUNE.contains(lv3)) {
+                     bl2 = this.world.removeBlock(lv, false) || bl2;
+                  } else {
+                     bl = true;
+                  }
+               }
+            }
+         }
+      }
+
+      if (bl2) {
+         BlockPos lv4 = new BlockPos(i + this.random.nextInt(l - i + 1), j + this.random.nextInt(m - j + 1), k + this.random.nextInt(n - k + 1));
+         this.world.syncWorldEvent(2008, lv4, 0);
+      }
+
+      return bl;
+   }
+
+   public boolean damagePart(EnderDragonPart part, DamageSource source, float amount) {
+      if (this.phaseManager.getCurrent().getType() == PhaseType.DYING) {
+         return false;
+      } else {
+         amount = this.phaseManager.getCurrent().modifyDamageTaken(source, amount);
+         if (part != this.partHead) {
+            amount = amount / 4.0F + Math.min(amount, 1.0F);
+         }
+
+         if (amount < 0.01F) {
+            return false;
+         } else {
+            if (source.getAttacker() instanceof PlayerEntity || source.isExplosive()) {
+               float g = this.getHealth();
+               this.parentDamage(source, amount);
+               if (this.isDead() && !this.phaseManager.getCurrent().isSittingOrHovering()) {
+                  this.setHealth(1.0F);
+                  this.phaseManager.setPhase(PhaseType.DYING);
+               }
+
+               if (this.phaseManager.getCurrent().isSittingOrHovering()) {
+                  this.field_7029 = (int)((float)this.field_7029 + (g - this.getHealth()));
+                  if ((float)this.field_7029 > 0.25F * this.getMaxHealth()) {
+                     this.field_7029 = 0;
+                     this.phaseManager.setPhase(PhaseType.TAKEOFF);
+                  }
+               }
+            }
+
+            return true;
+         }
+      }
+   }
+
+   @Override
+   public boolean damage(DamageSource source, float amount) {
+      if (source instanceof EntityDamageSource && ((EntityDamageSource)source).isThorns()) {
+         this.damagePart(this.partBody, source, amount);
+      }
+
+      return false;
+   }
+
+   protected boolean parentDamage(DamageSource source, float amount) {
+      return super.damage(source, amount);
+   }
+
+   @Override
+   public void kill() {
+      this.remove();
+      if (this.fight != null) {
+         this.fight.updateFight(this);
+         this.fight.dragonKilled(this);
+      }
+   }
+
+   @Override
+   protected void updatePostDeath() {
+      if (this.fight != null) {
+         this.fight.updateFight(this);
+      }
+
+      this.ticksSinceDeath++;
+      if (this.ticksSinceDeath >= 180 && this.ticksSinceDeath <= 200) {
+         float f = (this.random.nextFloat() - 0.5F) * 8.0F;
+         float g = (this.random.nextFloat() - 0.5F) * 4.0F;
+         float h = (this.random.nextFloat() - 0.5F) * 8.0F;
+         this.world
+            .addParticle(ParticleTypes.EXPLOSION_EMITTER, this.getX() + (double)f, this.getY() + 2.0 + (double)g, this.getZ() + (double)h, 0.0, 0.0, 0.0);
+      }
+
+      boolean bl = this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT);
+      int i = 500;
+      if (this.fight != null && !this.fight.hasPreviouslyKilled()) {
+         i = 12000;
+      }
+
+      if (!this.world.isClient) {
+         if (this.ticksSinceDeath > 150 && this.ticksSinceDeath % 5 == 0 && bl) {
+            this.awardExperience(MathHelper.floor((float)i * 0.08F));
+         }
+
+         if (this.ticksSinceDeath == 1 && !this.isSilent()) {
+            this.world.syncGlobalEvent(1028, this.getBlockPos(), 0);
+         }
+      }
+
+      this.move(MovementType.SELF, new Vec3d(0.0, 0.1F, 0.0));
+      this.yaw += 20.0F;
+      this.bodyYaw = this.yaw;
+      if (this.ticksSinceDeath == 200 && !this.world.isClient) {
+         if (bl) {
+            this.awardExperience(MathHelper.floor((float)i * 0.2F));
+         }
+
+         if (this.fight != null) {
+            this.fight.dragonKilled(this);
+         }
+
+         this.remove();
+      }
+   }
+
+   private void awardExperience(int amount) {
+      while (amount > 0) {
+         int j = ExperienceOrbEntity.roundToOrbSize(amount);
+         amount -= j;
+         this.world.spawnEntity(new ExperienceOrbEntity(this.world, this.getX(), this.getY(), this.getZ(), j));
+      }
+   }
+
+   public int getNearestPathNodeIndex() {
+      if (this.pathNodes[0] == null) {
+         for (int i = 0; i < 24; i++) {
+            int j = 5;
+            int l;
+            int m;
+            if (i < 12) {
+               l = MathHelper.floor(60.0F * MathHelper.cos(2.0F * ((float) -Math.PI + (float) (Math.PI / 12) * (float)i)));
+               m = MathHelper.floor(60.0F * MathHelper.sin(2.0F * ((float) -Math.PI + (float) (Math.PI / 12) * (float)i)));
+            } else if (i < 20) {
+               int k = i - 12;
+               l = MathHelper.floor(40.0F * MathHelper.cos(2.0F * ((float) -Math.PI + (float) (Math.PI / 8) * (float)k)));
+               m = MathHelper.floor(40.0F * MathHelper.sin(2.0F * ((float) -Math.PI + (float) (Math.PI / 8) * (float)k)));
+               j += 10;
+            } else {
+               int var7 = i - 20;
+               l = MathHelper.floor(20.0F * MathHelper.cos(2.0F * ((float) -Math.PI + (float) (Math.PI / 4) * (float)var7)));
+               m = MathHelper.floor(20.0F * MathHelper.sin(2.0F * ((float) -Math.PI + (float) (Math.PI / 4) * (float)var7)));
+            }
+
+            int r = Math.max(
+               this.world.getSeaLevel() + 10, this.world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, new BlockPos(l, 0, m)).getY() + j
+            );
+            this.pathNodes[i] = new PathNode(l, r, m);
+         }
+
+         this.pathNodeConnections[0] = 6146;
+         this.pathNodeConnections[1] = 8197;
+         this.pathNodeConnections[2] = 8202;
+         this.pathNodeConnections[3] = 16404;
+         this.pathNodeConnections[4] = 32808;
+         this.pathNodeConnections[5] = 32848;
+         this.pathNodeConnections[6] = 65696;
+         this.pathNodeConnections[7] = 131392;
+         this.pathNodeConnections[8] = 131712;
+         this.pathNodeConnections[9] = 263424;
+         this.pathNodeConnections[10] = 526848;
+         this.pathNodeConnections[11] = 525313;
+         this.pathNodeConnections[12] = 1581057;
+         this.pathNodeConnections[13] = 3166214;
+         this.pathNodeConnections[14] = 2138120;
+         this.pathNodeConnections[15] = 6373424;
+         this.pathNodeConnections[16] = 4358208;
+         this.pathNodeConnections[17] = 12910976;
+         this.pathNodeConnections[18] = 9044480;
+         this.pathNodeConnections[19] = 9706496;
+         this.pathNodeConnections[20] = 15216640;
+         this.pathNodeConnections[21] = 13688832;
+         this.pathNodeConnections[22] = 11763712;
+         this.pathNodeConnections[23] = 8257536;
+      }
+
+      return this.getNearestPathNodeIndex(this.getX(), this.getY(), this.getZ());
+   }
+
+   public int getNearestPathNodeIndex(double x, double y, double z) {
+      float g = 10000.0F;
+      int i = 0;
+      PathNode lv = new PathNode(MathHelper.floor(x), MathHelper.floor(y), MathHelper.floor(z));
+      int j = 0;
+      if (this.fight == null || this.fight.getAliveEndCrystals() == 0) {
+         j = 12;
+      }
+
+      for (int k = j; k < 24; k++) {
+         if (this.pathNodes[k] != null) {
+            float h = this.pathNodes[k].getSquaredDistance(lv);
+            if (h < g) {
+               g = h;
+               i = k;
+            }
+         }
+      }
+
+      return i;
+   }
+
+   @Nullable
+   public Path findPath(int from, int to, @Nullable PathNode arg) {
+      for (int k = 0; k < 24; k++) {
+         PathNode lv = this.pathNodes[k];
+         lv.visited = false;
+         lv.heapWeight = 0.0F;
+         lv.penalizedPathLength = 0.0F;
+         lv.distanceToNearestTarget = 0.0F;
+         lv.previous = null;
+         lv.heapIndex = -1;
+      }
+
+      PathNode lv2 = this.pathNodes[from];
+      PathNode lv3 = this.pathNodes[to];
+      lv2.penalizedPathLength = 0.0F;
+      lv2.distanceToNearestTarget = lv2.getDistance(lv3);
+      lv2.heapWeight = lv2.distanceToNearestTarget;
+      this.pathHeap.clear();
+      this.pathHeap.push(lv2);
+      PathNode lv4 = lv2;
+      int l = 0;
+      if (this.fight == null || this.fight.getAliveEndCrystals() == 0) {
+         l = 12;
+      }
+
+      while (!this.pathHeap.isEmpty()) {
+         PathNode lv5 = this.pathHeap.pop();
+         if (lv5.equals(lv3)) {
+            if (arg != null) {
+               arg.previous = lv3;
+               lv3 = arg;
+            }
+
+            return this.getPathOfAllPredecessors(lv2, lv3);
+         }
+
+         if (lv5.getDistance(lv3) < lv4.getDistance(lv3)) {
+            lv4 = lv5;
+         }
+
+         lv5.visited = true;
+         int m = 0;
+
+         for (int n = 0; n < 24; n++) {
+            if (this.pathNodes[n] == lv5) {
+               m = n;
+               break;
+            }
+         }
+
+         for (int o = l; o < 24; o++) {
+            if ((this.pathNodeConnections[m] & 1 << o) > 0) {
+               PathNode lv6 = this.pathNodes[o];
+               if (!lv6.visited) {
+                  float f = lv5.penalizedPathLength + lv5.getDistance(lv6);
+                  if (!lv6.isInHeap() || f < lv6.penalizedPathLength) {
+                     lv6.previous = lv5;
+                     lv6.penalizedPathLength = f;
+                     lv6.distanceToNearestTarget = lv6.getDistance(lv3);
+                     if (lv6.isInHeap()) {
+                        this.pathHeap.setNodeWeight(lv6, lv6.penalizedPathLength + lv6.distanceToNearestTarget);
+                     } else {
+                        lv6.heapWeight = lv6.penalizedPathLength + lv6.distanceToNearestTarget;
+                        this.pathHeap.push(lv6);
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if (lv4 == lv2) {
+         return null;
+      } else {
+         LOGGER.debug("Failed to find path from {} to {}", from, to);
+         if (arg != null) {
+            arg.previous = lv4;
+            lv4 = arg;
+         }
+
+         return this.getPathOfAllPredecessors(lv2, lv4);
+      }
+   }
+
+   private Path getPathOfAllPredecessors(PathNode unused, PathNode node) {
+      List<PathNode> list = Lists.newArrayList();
+      PathNode lv = node;
+      list.add(0, node);
+
+      while (lv.previous != null) {
+         lv = lv.previous;
+         list.add(0, lv);
+      }
+
+      return new Path(list, new BlockPos(node.x, node.y, node.z), true);
+   }
+
+   @Override
+   public void writeCustomDataToTag(CompoundTag tag) {
+      super.writeCustomDataToTag(tag);
+      tag.putInt("DragonPhase", this.phaseManager.getCurrent().getType().getTypeId());
+   }
+
+   @Override
+   public void readCustomDataFromTag(CompoundTag tag) {
+      super.readCustomDataFromTag(tag);
+      if (tag.contains("DragonPhase")) {
+         this.phaseManager.setPhase(PhaseType.getFromId(tag.getInt("DragonPhase")));
+      }
+   }
+
+   @Override
+   public void checkDespawn() {
+   }
+
+   public EnderDragonPart[] getBodyParts() {
+      return this.parts;
+   }
+
+   @Override
+   public boolean collides() {
+      return false;
+   }
+
+   @Override
+   public SoundCategory getSoundCategory() {
+      return SoundCategory.HOSTILE;
+   }
+
+   @Override
+   protected SoundEvent getAmbientSound() {
+      return SoundEvents.ENTITY_ENDER_DRAGON_AMBIENT;
+   }
+
+   @Override
+   protected SoundEvent getHurtSound(DamageSource source) {
+      return SoundEvents.ENTITY_ENDER_DRAGON_HURT;
+   }
+
+   @Override
+   protected float getSoundVolume() {
+      return 5.0F;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public float method_6823(int segmentOffset, double[] segment1, double[] segment2) {
+      Phase lv = this.phaseManager.getCurrent();
+      PhaseType<? extends Phase> lv2 = lv.getType();
+      double d;
+      if (lv2 == PhaseType.LANDING || lv2 == PhaseType.TAKEOFF) {
+         BlockPos lv3 = this.world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, EndPortalFeature.ORIGIN);
+         float f = Math.max(MathHelper.sqrt(lv3.getSquaredDistance(this.getPos(), true)) / 4.0F, 1.0F);
+         d = (double)((float)segmentOffset / f);
+      } else if (lv.isSittingOrHovering()) {
+         d = (double)segmentOffset;
+      } else if (segmentOffset == 6) {
+         d = 0.0;
+      } else {
+         d = segment2[1] - segment1[1];
+      }
+
+      return (float)d;
+   }
+
+   public Vec3d method_6834(float tickDelta) {
+      Phase lv = this.phaseManager.getCurrent();
+      PhaseType<? extends Phase> lv2 = lv.getType();
+      Vec3d lv4;
+      if (lv2 == PhaseType.LANDING || lv2 == PhaseType.TAKEOFF) {
+         BlockPos lv3 = this.world.getTopPosition(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, EndPortalFeature.ORIGIN);
+         float g = Math.max(MathHelper.sqrt(lv3.getSquaredDistance(this.getPos(), true)) / 4.0F, 1.0F);
+         float h = 6.0F / g;
+         float i = this.pitch;
+         float j = 1.5F;
+         this.pitch = -h * 1.5F * 5.0F;
+         lv4 = this.getRotationVec(tickDelta);
+         this.pitch = i;
+      } else if (lv.isSittingOrHovering()) {
+         float k = this.pitch;
+         float l = 1.5F;
+         this.pitch = -45.0F;
+         lv4 = this.getRotationVec(tickDelta);
+         this.pitch = k;
+      } else {
+         lv4 = this.getRotationVec(tickDelta);
+      }
+
+      return lv4;
+   }
+
+   public void crystalDestroyed(EndCrystalEntity crystal, BlockPos pos, DamageSource source) {
+      PlayerEntity lv;
+      if (source.getAttacker() instanceof PlayerEntity) {
+         lv = (PlayerEntity)source.getAttacker();
+      } else {
+         lv = this.world.getClosestPlayer(CLOSE_PLAYER_PREDICATE, (double)pos.getX(), (double)pos.getY(), (double)pos.getZ());
+      }
+
+      if (crystal == this.connectedCrystal) {
+         this.damagePart(this.partHead, DamageSource.explosion(lv), 10.0F);
+      }
+
+      this.phaseManager.getCurrent().crystalDestroyed(crystal, pos, source, lv);
+   }
+
+   @Override
+   public void onTrackedDataSet(TrackedData<?> data) {
+      if (PHASE_TYPE.equals(data) && this.world.isClient) {
+         this.phaseManager.setPhase(PhaseType.getFromId(this.getDataTracker().get(PHASE_TYPE)));
+      }
+
+      super.onTrackedDataSet(data);
+   }
+
+   public PhaseManager getPhaseManager() {
+      return this.phaseManager;
+   }
+
+   @Nullable
+   public EnderDragonFight getFight() {
+      return this.fight;
+   }
+
+   @Override
+   public boolean addStatusEffect(StatusEffectInstance effect) {
+      return false;
+   }
+
+   @Override
+   protected boolean canStartRiding(Entity entity) {
+      return false;
+   }
+
+   @Override
+   public boolean canUsePortals() {
+      return false;
+   }
+}

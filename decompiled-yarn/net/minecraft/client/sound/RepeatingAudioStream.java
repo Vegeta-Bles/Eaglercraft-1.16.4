@@ -1,0 +1,60 @@
+package net.minecraft.client.sound;
+
+import java.io.BufferedInputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import javax.sound.sampled.AudioFormat;
+
+public class RepeatingAudioStream implements AudioStream {
+   private final RepeatingAudioStream.DelegateFactory delegateFactory;
+   private AudioStream delegate;
+   private final BufferedInputStream inputStream;
+
+   public RepeatingAudioStream(RepeatingAudioStream.DelegateFactory delegateFactory, InputStream inputStream) throws IOException {
+      this.delegateFactory = delegateFactory;
+      this.inputStream = new BufferedInputStream(inputStream);
+      this.inputStream.mark(Integer.MAX_VALUE);
+      this.delegate = delegateFactory.create(new RepeatingAudioStream.ReusableInputStream(this.inputStream));
+   }
+
+   @Override
+   public AudioFormat getFormat() {
+      return this.delegate.getFormat();
+   }
+
+   @Override
+   public ByteBuffer getBuffer(int size) throws IOException {
+      ByteBuffer _snowman = this.delegate.getBuffer(size);
+      if (!_snowman.hasRemaining()) {
+         this.delegate.close();
+         this.inputStream.reset();
+         this.delegate = this.delegateFactory.create(new RepeatingAudioStream.ReusableInputStream(this.inputStream));
+         _snowman = this.delegate.getBuffer(size);
+      }
+
+      return _snowman;
+   }
+
+   @Override
+   public void close() throws IOException {
+      this.delegate.close();
+      this.inputStream.close();
+   }
+
+   @FunctionalInterface
+   public interface DelegateFactory {
+      AudioStream create(InputStream var1) throws IOException;
+   }
+
+   static class ReusableInputStream extends FilterInputStream {
+      private ReusableInputStream(InputStream inputStream) {
+         super(inputStream);
+      }
+
+      @Override
+      public void close() {
+      }
+   }
+}

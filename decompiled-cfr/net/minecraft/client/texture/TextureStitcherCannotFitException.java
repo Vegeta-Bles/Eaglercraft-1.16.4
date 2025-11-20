@@ -1,0 +1,22 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.texture;
+
+import java.util.Collection;
+import net.minecraft.client.texture.Sprite;
+
+public class TextureStitcherCannotFitException
+extends RuntimeException {
+    private final Collection<Sprite.Info> sprites;
+
+    public TextureStitcherCannotFitException(Sprite.Info sprite, Collection<Sprite.Info> sprites) {
+        super(String.format("Unable to fit: %s - size: %dx%d - Maybe try a lower resolution resourcepack?", sprite.getId(), sprite.getWidth(), sprite.getHeight()));
+        this.sprites = sprites;
+    }
+
+    public Collection<Sprite.Info> getSprites() {
+        return this.sprites;
+    }
+}
+

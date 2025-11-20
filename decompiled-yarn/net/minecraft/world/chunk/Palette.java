@@ -1,0 +1,23 @@
+package net.minecraft.world.chunk;
+
+import java.util.function.Predicate;
+import javax.annotation.Nullable;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.network.PacketByteBuf;
+
+public interface Palette<T> {
+   int getIndex(T object);
+
+   boolean accepts(Predicate<T> var1);
+
+   @Nullable
+   T getByIndex(int index);
+
+   void fromPacket(PacketByteBuf buf);
+
+   void toPacket(PacketByteBuf buf);
+
+   int getPacketSize();
+
+   void fromTag(ListTag tag);
+}

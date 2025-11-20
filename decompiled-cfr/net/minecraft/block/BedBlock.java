@@ -1,0 +1,335 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  javax.annotation.Nullable
+ *  org.apache.commons.lang3.ArrayUtils
+ */
+package net.minecraft.block;
+
+import java.util.List;
+import java.util.Optional;
+import javax.annotation.Nullable;
+import net.minecraft.block.AbstractBlock;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockEntityProvider;
+import net.minecraft.block.BlockRenderType;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.DoubleBlockProperties;
+import net.minecraft.block.HorizontalFacingBlock;
+import net.minecraft.block.ShapeContext;
+import net.minecraft.block.entity.BedBlockEntity;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.enums.BedPart;
+import net.minecraft.block.piston.PistonBehavior;
+import net.minecraft.entity.Dismounting;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.pathing.NavigationType;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.item.ItemStack;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.EnumProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.DyeColor;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.CollisionView;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldAccess;
+import net.minecraft.world.explosion.Explosion;
+import org.apache.commons.lang3.ArrayUtils;
+
+public class BedBlock
+extends HorizontalFacingBlock
+implements BlockEntityProvider {
+    public static final EnumProperty<BedPart> PART = Properties.BED_PART;
+    public static final BooleanProperty OCCUPIED = Properties.OCCUPIED;
+    protected static final VoxelShape TOP_SHAPE = Block.createCuboidShape(0.0, 3.0, 0.0, 16.0, 9.0, 16.0);
+    protected static final VoxelShape LEG_1_SHAPE = Block.createCuboidShape(0.0, 0.0, 0.0, 3.0, 3.0, 3.0);
+    protected static final VoxelShape LEG_2_SHAPE = Block.createCuboidShape(0.0, 0.0, 13.0, 3.0, 3.0, 16.0);
+    protected static final VoxelShape LEG_3_SHAPE = Block.createCuboidShape(13.0, 0.0, 0.0, 16.0, 3.0, 3.0);
+    protected static final VoxelShape LEG_4_SHAPE = Block.createCuboidShape(13.0, 0.0, 13.0, 16.0, 3.0, 16.0);
+    protected static final VoxelShape NORTH_SHAPE = VoxelShapes.union(TOP_SHAPE, LEG_1_SHAPE, LEG_3_SHAPE);
+    protected static final VoxelShape SOUTH_SHAPE = VoxelShapes.union(TOP_SHAPE, LEG_2_SHAPE, LEG_4_SHAPE);
+    protected static final VoxelShape WEST_SHAPE = VoxelShapes.union(TOP_SHAPE, LEG_1_SHAPE, LEG_2_SHAPE);
+    protected static final VoxelShape EAST_SHAPE = VoxelShapes.union(TOP_SHAPE, LEG_3_SHAPE, LEG_4_SHAPE);
+    private final DyeColor color;
+
+    public BedBlock(DyeColor color, AbstractBlock.Settings settings) {
+        super(settings);
+        this.color = color;
+        this.setDefaultState((BlockState)((BlockState)((BlockState)this.stateManager.getDefaultState()).with(PART, BedPart.FOOT)).with(OCCUPIED, false));
+    }
+
+    @Nullable
+    public static Direction getDirection(BlockView world, BlockPos pos) {
+        BlockState blockState = world.getBlockState(pos);
+        return blockState.getBlock() instanceof BedBlock ? blockState.get(FACING) : null;
+    }
+
+    @Override
+    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
+        if (world.isClient) {
+            return ActionResult.CONSUME;
+        }
+        if (state.get(PART) != BedPart.HEAD && !(state = world.getBlockState(pos = pos.offset(state.get(FACING)))).isOf(this)) {
+            return ActionResult.CONSUME;
+        }
+        if (!BedBlock.isOverworld(world)) {
+            world.removeBlock(pos, false);
+            BlockPos blockPos = pos.offset(state.get(FACING).getOpposite());
+            if (world.getBlockState(blockPos).isOf(this)) {
+                world.removeBlock(blockPos, false);
+            }
+            world.createExplosion(null, DamageSource.badRespawnPoint(), null, (double)pos.getX() + 0.5, (double)pos.getY() + 0.5, (double)pos.getZ() + 0.5, 5.0f, true, Explosion.DestructionType.DESTROY);
+            return ActionResult.SUCCESS;
+        }
+        if (state.get(OCCUPIED).booleanValue()) {
+            if (!this.isFree(world, pos)) {
+                player.sendMessage(new TranslatableText("block.minecraft.bed.occupied"), true);
+            }
+            return ActionResult.SUCCESS;
+        }
+        player.trySleep(pos).ifLeft(sleepFailureReason -> {
+            if (sleepFailureReason != null) {
+                player.sendMessage(sleepFailureReason.toText(), true);
+            }
+        });
+        return ActionResult.SUCCESS;
+    }
+
+    public static boolean isOverworld(World world) {
+        return world.getDimension().isBedWorking();
+    }
+
+    private boolean isFree(World world, BlockPos pos) {
+        List<VillagerEntity> list = world.getEntitiesByClass(VillagerEntity.class, new Box(pos), LivingEntity::isSleeping);
+        if (list.isEmpty()) {
+            return false;
+        }
+        list.get(0).wakeUp();
+        return true;
+    }
+
+    @Override
+    public void onLandedUpon(World world, BlockPos pos, Entity entity, float distance) {
+        super.onLandedUpon(world, pos, entity, distance * 0.5f);
+    }
+
+    @Override
+    public void onEntityLand(BlockView world, Entity entity) {
+        if (entity.bypassesLandingEffects()) {
+            super.onEntityLand(world, entity);
+        } else {
+            this.bounceEntity(entity);
+        }
+    }
+
+    private void bounceEntity(Entity entity) {
+        Vec3d vec3d = entity.getVelocity();
+        if (vec3d.y < 0.0) {
+            double d = entity instanceof LivingEntity ? 1.0 : 0.8;
+            entity.setVelocity(vec3d.x, -vec3d.y * (double)0.66f * d, vec3d.z);
+        }
+    }
+
+    @Override
+    public BlockState getStateForNeighborUpdate(BlockState state, Direction direction, BlockState newState, WorldAccess world, BlockPos pos, BlockPos posFrom) {
+        if (direction == BedBlock.getDirectionTowardsOtherPart(state.get(PART), state.get(FACING))) {
+            if (newState.isOf(this) && newState.get(PART) != state.get(PART)) {
+                return (BlockState)state.with(OCCUPIED, newState.get(OCCUPIED));
+            }
+            return Blocks.AIR.getDefaultState();
+        }
+        return super.getStateForNeighborUpdate(state, direction, newState, world, pos, posFrom);
+    }
+
+    private static Direction getDirectionTowardsOtherPart(BedPart part, Direction direction) {
+        return part == BedPart.FOOT ? direction : direction.getOpposite();
+    }
+
+    @Override
+    public void onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
+        BedPart bedPart;
+        if (!world.isClient && player.isCreative() && (bedPart = state.get(PART)) == BedPart.FOOT && (_snowman = world.getBlockState(_snowman = pos.offset(BedBlock.getDirectionTowardsOtherPart(bedPart, state.get(FACING))))).getBlock() == this && _snowman.get(PART) == BedPart.HEAD) {
+            world.setBlockState(_snowman, Blocks.AIR.getDefaultState(), 35);
+            world.syncWorldEvent(player, 2001, _snowman, Block.getRawIdFromState(_snowman));
+        }
+        super.onBreak(world, pos, state, player);
+    }
+
+    @Override
+    @Nullable
+    public BlockState getPlacementState(ItemPlacementContext ctx) {
+        Direction direction = ctx.getPlayerFacing();
+        BlockPos _snowman2 = ctx.getBlockPos();
+        BlockPos _snowman3 = _snowman2.offset(direction);
+        if (ctx.getWorld().getBlockState(_snowman3).canReplace(ctx)) {
+            return (BlockState)this.getDefaultState().with(FACING, direction);
+        }
+        return null;
+    }
+
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        Direction direction = BedBlock.getOppositePartDirection(state).getOpposite();
+        switch (direction) {
+            case NORTH: {
+                return NORTH_SHAPE;
+            }
+            case SOUTH: {
+                return SOUTH_SHAPE;
+            }
+            case WEST: {
+                return WEST_SHAPE;
+            }
+        }
+        return EAST_SHAPE;
+    }
+
+    public static Direction getOppositePartDirection(BlockState state) {
+        Direction direction = state.get(FACING);
+        return state.get(PART) == BedPart.HEAD ? direction.getOpposite() : direction;
+    }
+
+    public static DoubleBlockProperties.Type getBedPart(BlockState state) {
+        BedPart bedPart = state.get(PART);
+        if (bedPart == BedPart.HEAD) {
+            return DoubleBlockProperties.Type.FIRST;
+        }
+        return DoubleBlockProperties.Type.SECOND;
+    }
+
+    private static boolean method_30839(BlockView blockView, BlockPos blockPos) {
+        return blockView.getBlockState(blockPos.down()).getBlock() instanceof BedBlock;
+    }
+
+    public static Optional<Vec3d> findWakeUpPosition(EntityType<?> type, CollisionView collisionView, BlockPos pos, float f) {
+        Direction direction = collisionView.getBlockState(pos).get(FACING);
+        _snowman = direction.rotateYClockwise();
+        Direction direction2 = _snowman = _snowman.method_30928(f) ? _snowman.getOpposite() : _snowman;
+        if (BedBlock.method_30839(collisionView, pos)) {
+            return BedBlock.method_30835(type, collisionView, pos, direction, _snowman);
+        }
+        int[][] _snowman2 = BedBlock.method_30838(direction, _snowman);
+        Optional<Vec3d> _snowman3 = BedBlock.method_30836(type, collisionView, pos, _snowman2, true);
+        if (_snowman3.isPresent()) {
+            return _snowman3;
+        }
+        return BedBlock.method_30836(type, collisionView, pos, _snowman2, false);
+    }
+
+    private static Optional<Vec3d> method_30835(EntityType<?> entityType, CollisionView collisionView, BlockPos blockPos, Direction direction, Direction direction2) {
+        int[][] nArray = BedBlock.method_30840(direction, direction2);
+        Optional<Vec3d> _snowman2 = BedBlock.method_30836(entityType, collisionView, blockPos, nArray, true);
+        if (_snowman2.isPresent()) {
+            return _snowman2;
+        }
+        BlockPos _snowman3 = blockPos.down();
+        Optional<Vec3d> _snowman4 = BedBlock.method_30836(entityType, collisionView, _snowman3, nArray, true);
+        if (_snowman4.isPresent()) {
+            return _snowman4;
+        }
+        _snowman = BedBlock.method_30837(direction);
+        Optional<Vec3d> _snowman5 = BedBlock.method_30836(entityType, collisionView, blockPos, _snowman, true);
+        if (_snowman5.isPresent()) {
+            return _snowman5;
+        }
+        Optional<Vec3d> _snowman6 = BedBlock.method_30836(entityType, collisionView, blockPos, nArray, false);
+        if (_snowman6.isPresent()) {
+            return _snowman6;
+        }
+        Optional<Vec3d> _snowman7 = BedBlock.method_30836(entityType, collisionView, _snowman3, nArray, false);
+        if (_snowman7.isPresent()) {
+            return _snowman7;
+        }
+        return BedBlock.method_30836(entityType, collisionView, blockPos, _snowman, false);
+    }
+
+    private static Optional<Vec3d> method_30836(EntityType<?> entityType, CollisionView collisionView, BlockPos blockPos, int[][] nArray, boolean bl) {
+        BlockPos.Mutable mutable = new BlockPos.Mutable();
+        for (int[] nArray2 : nArray) {
+            mutable.set(blockPos.getX() + nArray2[0], blockPos.getY(), blockPos.getZ() + nArray2[1]);
+            Vec3d vec3d = Dismounting.method_30769(entityType, collisionView, mutable, bl);
+            if (vec3d == null) continue;
+            return Optional.of(vec3d);
+        }
+        return Optional.empty();
+    }
+
+    @Override
+    public PistonBehavior getPistonBehavior(BlockState state) {
+        return PistonBehavior.DESTROY;
+    }
+
+    @Override
+    public BlockRenderType getRenderType(BlockState state) {
+        return BlockRenderType.ENTITYBLOCK_ANIMATED;
+    }
+
+    @Override
+    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+        builder.add(FACING, PART, OCCUPIED);
+    }
+
+    @Override
+    public BlockEntity createBlockEntity(BlockView world) {
+        return new BedBlockEntity(this.color);
+    }
+
+    @Override
+    public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack itemStack) {
+        super.onPlaced(world, pos, state, placer, itemStack);
+        if (!world.isClient) {
+            BlockPos blockPos = pos.offset(state.get(FACING));
+            world.setBlockState(blockPos, (BlockState)state.with(PART, BedPart.HEAD), 3);
+            world.updateNeighbors(pos, Blocks.AIR);
+            state.updateNeighbors(world, pos, 3);
+        }
+    }
+
+    public DyeColor getColor() {
+        return this.color;
+    }
+
+    @Override
+    public long getRenderingSeed(BlockState state, BlockPos pos) {
+        BlockPos blockPos = pos.offset(state.get(FACING), state.get(PART) == BedPart.HEAD ? 0 : 1);
+        return MathHelper.hashCode(blockPos.getX(), pos.getY(), blockPos.getZ());
+    }
+
+    @Override
+    public boolean canPathfindThrough(BlockState state, BlockView world, BlockPos pos, NavigationType type) {
+        return false;
+    }
+
+    private static int[][] method_30838(Direction direction, Direction direction2) {
+        return (int[][])ArrayUtils.addAll((Object[])BedBlock.method_30840(direction, direction2), (Object[])BedBlock.method_30837(direction));
+    }
+
+    private static int[][] method_30840(Direction direction, Direction direction2) {
+        return new int[][]{{direction2.getOffsetX(), direction2.getOffsetZ()}, {direction2.getOffsetX() - direction.getOffsetX(), direction2.getOffsetZ() - direction.getOffsetZ()}, {direction2.getOffsetX() - direction.getOffsetX() * 2, direction2.getOffsetZ() - direction.getOffsetZ() * 2}, {-direction.getOffsetX() * 2, -direction.getOffsetZ() * 2}, {-direction2.getOffsetX() - direction.getOffsetX() * 2, -direction2.getOffsetZ() - direction.getOffsetZ() * 2}, {-direction2.getOffsetX() - direction.getOffsetX(), -direction2.getOffsetZ() - direction.getOffsetZ()}, {-direction2.getOffsetX(), -direction2.getOffsetZ()}, {-direction2.getOffsetX() + direction.getOffsetX(), -direction2.getOffsetZ() + direction.getOffsetZ()}, {direction.getOffsetX(), direction.getOffsetZ()}, {direction2.getOffsetX() + direction.getOffsetX(), direction2.getOffsetZ() + direction.getOffsetZ()}};
+    }
+
+    private static int[][] method_30837(Direction direction) {
+        return new int[][]{{0, 0}, {-direction.getOffsetX(), -direction.getOffsetZ()}};
+    }
+}
+

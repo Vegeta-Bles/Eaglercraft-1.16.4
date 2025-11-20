@@ -1,0 +1,113 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.datafixers.Products$P2
+ *  com.mojang.datafixers.kinds.App
+ *  com.mojang.serialization.Codec
+ *  com.mojang.serialization.codecs.RecordCodecBuilder$Instance
+ *  com.mojang.serialization.codecs.RecordCodecBuilder$Mu
+ */
+package net.minecraft.world.gen.foliage;
+
+import com.mojang.datafixers.Products;
+import com.mojang.datafixers.kinds.App;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.util.Random;
+import java.util.Set;
+import net.minecraft.util.math.BlockBox;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.registry.Registry;
+import net.minecraft.world.ModifiableTestableWorld;
+import net.minecraft.world.gen.UniformIntDistribution;
+import net.minecraft.world.gen.feature.TreeFeature;
+import net.minecraft.world.gen.feature.TreeFeatureConfig;
+import net.minecraft.world.gen.foliage.FoliagePlacerType;
+
+public abstract class FoliagePlacer {
+    public static final Codec<FoliagePlacer> TYPE_CODEC = Registry.FOLIAGE_PLACER_TYPE.dispatch(FoliagePlacer::getType, FoliagePlacerType::getCodec);
+    protected final UniformIntDistribution radius;
+    protected final UniformIntDistribution offset;
+
+    protected static <P extends FoliagePlacer> Products.P2<RecordCodecBuilder.Mu<P>, UniformIntDistribution, UniformIntDistribution> fillFoliagePlacerFields(RecordCodecBuilder.Instance<P> instance) {
+        return instance.group((App)UniformIntDistribution.createValidatedCodec(0, 8, 8).fieldOf("radius").forGetter(foliagePlacer -> foliagePlacer.radius), (App)UniformIntDistribution.createValidatedCodec(0, 8, 8).fieldOf("offset").forGetter(foliagePlacer -> foliagePlacer.offset));
+    }
+
+    public FoliagePlacer(UniformIntDistribution radius, UniformIntDistribution offset) {
+        this.radius = radius;
+        this.offset = offset;
+    }
+
+    protected abstract FoliagePlacerType<?> getType();
+
+    public void generate(ModifiableTestableWorld world, Random random, TreeFeatureConfig config, int trunkHeight, TreeNode treeNode, int foliageHeight, int radius, Set<BlockPos> leaves, BlockBox box) {
+        this.generate(world, random, config, trunkHeight, treeNode, foliageHeight, radius, leaves, this.getRandomOffset(random), box);
+    }
+
+    protected abstract void generate(ModifiableTestableWorld var1, Random var2, TreeFeatureConfig var3, int var4, TreeNode var5, int var6, int var7, Set<BlockPos> var8, int var9, BlockBox var10);
+
+    public abstract int getRandomHeight(Random var1, int var2, TreeFeatureConfig var3);
+
+    public int getRandomRadius(Random random, int baseHeight) {
+        return this.radius.getValue(random);
+    }
+
+    private int getRandomOffset(Random random) {
+        return this.offset.getValue(random);
+    }
+
+    protected abstract boolean isInvalidForLeaves(Random var1, int var2, int var3, int var4, int var5, boolean var6);
+
+    protected boolean isPositionInvalid(Random random, int dx, int y, int dz, int radius, boolean giantTrunk) {
+        int n;
+        if (giantTrunk) {
+            n = Math.min(Math.abs(dx), Math.abs(dx - 1));
+            _snowman = Math.min(Math.abs(dz), Math.abs(dz - 1));
+        } else {
+            n = Math.abs(dx);
+            _snowman = Math.abs(dz);
+        }
+        return this.isInvalidForLeaves(random, n, y, _snowman, radius, giantTrunk);
+    }
+
+    protected void generateSquare(ModifiableTestableWorld world, Random random, TreeFeatureConfig config, BlockPos pos, int radius, Set<BlockPos> leaves, int y, boolean giantTrunk, BlockBox box) {
+        int n = giantTrunk ? 1 : 0;
+        BlockPos.Mutable _snowman2 = new BlockPos.Mutable();
+        for (_snowman = -radius; _snowman <= radius + n; ++_snowman) {
+            for (_snowman = -radius; _snowman <= radius + n; ++_snowman) {
+                if (this.isPositionInvalid(random, _snowman, y, _snowman, radius, giantTrunk)) continue;
+                _snowman2.set(pos, _snowman, y, _snowman);
+                if (!TreeFeature.canReplace(world, _snowman2)) continue;
+                world.setBlockState(_snowman2, config.leavesProvider.getBlockState(random, _snowman2), 19);
+                box.encompass(new BlockBox(_snowman2, _snowman2));
+                leaves.add(_snowman2.toImmutable());
+            }
+        }
+    }
+
+    public static final class TreeNode {
+        private final BlockPos center;
+        private final int foliageRadius;
+        private final boolean giantTrunk;
+
+        public TreeNode(BlockPos center, int foliageRadius, boolean giantTrunk) {
+            this.center = center;
+            this.foliageRadius = foliageRadius;
+            this.giantTrunk = giantTrunk;
+        }
+
+        public BlockPos getCenter() {
+            return this.center;
+        }
+
+        public int getFoliageRadius() {
+            return this.foliageRadius;
+        }
+
+        public boolean isGiantTrunk() {
+            return this.giantTrunk;
+        }
+    }
+}
+

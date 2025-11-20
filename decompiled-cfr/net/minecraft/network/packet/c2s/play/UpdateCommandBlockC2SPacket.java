@@ -1,0 +1,92 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.network.packet.c2s.play;
+
+import java.io.IOException;
+import net.minecraft.block.entity.CommandBlockBlockEntity;
+import net.minecraft.network.Packet;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.listener.ServerPlayPacketListener;
+import net.minecraft.util.math.BlockPos;
+
+public class UpdateCommandBlockC2SPacket
+implements Packet<ServerPlayPacketListener> {
+    private BlockPos pos;
+    private String command;
+    private boolean trackOutput;
+    private boolean conditional;
+    private boolean alwaysActive;
+    private CommandBlockBlockEntity.Type type;
+
+    public UpdateCommandBlockC2SPacket() {
+    }
+
+    public UpdateCommandBlockC2SPacket(BlockPos pos, String command, CommandBlockBlockEntity.Type type, boolean trackOutput, boolean conditional, boolean alwaysActive) {
+        this.pos = pos;
+        this.command = command;
+        this.trackOutput = trackOutput;
+        this.conditional = conditional;
+        this.alwaysActive = alwaysActive;
+        this.type = type;
+    }
+
+    @Override
+    public void read(PacketByteBuf buf) throws IOException {
+        this.pos = buf.readBlockPos();
+        this.command = buf.readString(Short.MAX_VALUE);
+        this.type = buf.readEnumConstant(CommandBlockBlockEntity.Type.class);
+        byte by = buf.readByte();
+        this.trackOutput = (by & 1) != 0;
+        this.conditional = (by & 2) != 0;
+        this.alwaysActive = (by & 4) != 0;
+    }
+
+    @Override
+    public void write(PacketByteBuf buf) throws IOException {
+        buf.writeBlockPos(this.pos);
+        buf.writeString(this.command);
+        buf.writeEnumConstant(this.type);
+        int n = 0;
+        if (this.trackOutput) {
+            n |= 1;
+        }
+        if (this.conditional) {
+            n |= 2;
+        }
+        if (this.alwaysActive) {
+            n |= 4;
+        }
+        buf.writeByte(n);
+    }
+
+    @Override
+    public void apply(ServerPlayPacketListener serverPlayPacketListener) {
+        serverPlayPacketListener.onUpdateCommandBlock(this);
+    }
+
+    public BlockPos getBlockPos() {
+        return this.pos;
+    }
+
+    public String getCommand() {
+        return this.command;
+    }
+
+    public boolean shouldTrackOutput() {
+        return this.trackOutput;
+    }
+
+    public boolean isConditional() {
+        return this.conditional;
+    }
+
+    public boolean isAlwaysActive() {
+        return this.alwaysActive;
+    }
+
+    public CommandBlockBlockEntity.Type getType() {
+        return this.type;
+    }
+}
+

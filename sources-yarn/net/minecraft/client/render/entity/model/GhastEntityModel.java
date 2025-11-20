@@ -1,0 +1,51 @@
+package net.minecraft.client.render.entity.model;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableList.Builder;
+import java.util.Random;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.client.model.ModelPart;
+import net.minecraft.entity.Entity;
+import net.minecraft.util.math.MathHelper;
+
+@Environment(EnvType.CLIENT)
+public class GhastEntityModel<T extends Entity> extends CompositeEntityModel<T> {
+   private final ModelPart[] tentacles = new ModelPart[9];
+   private final ImmutableList<ModelPart> parts;
+
+   public GhastEntityModel() {
+      Builder<ModelPart> builder = ImmutableList.builder();
+      ModelPart lv = new ModelPart(this, 0, 0);
+      lv.addCuboid(-8.0F, -8.0F, -8.0F, 16.0F, 16.0F, 16.0F);
+      lv.pivotY = 17.6F;
+      builder.add(lv);
+      Random random = new Random(1660L);
+
+      for (int i = 0; i < this.tentacles.length; i++) {
+         this.tentacles[i] = new ModelPart(this, 0, 0);
+         float f = (((float)(i % 3) - (float)(i / 3 % 2) * 0.5F + 0.25F) / 2.0F * 2.0F - 1.0F) * 5.0F;
+         float g = ((float)(i / 3) / 2.0F * 2.0F - 1.0F) * 5.0F;
+         int j = random.nextInt(7) + 8;
+         this.tentacles[i].addCuboid(-1.0F, 0.0F, -1.0F, 2.0F, (float)j, 2.0F);
+         this.tentacles[i].pivotX = f;
+         this.tentacles[i].pivotZ = g;
+         this.tentacles[i].pivotY = 24.6F;
+         builder.add(this.tentacles[i]);
+      }
+
+      this.parts = builder.build();
+   }
+
+   @Override
+   public void setAngles(T entity, float limbAngle, float limbDistance, float animationProgress, float headYaw, float headPitch) {
+      for (int k = 0; k < this.tentacles.length; k++) {
+         this.tentacles[k].pitch = 0.2F * MathHelper.sin(animationProgress * 0.3F + (float)k) + 0.4F;
+      }
+   }
+
+   @Override
+   public Iterable<ModelPart> getParts() {
+      return this.parts;
+   }
+}

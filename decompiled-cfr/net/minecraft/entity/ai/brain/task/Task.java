@@ -1,0 +1,102 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.entity.ai.brain.task;
+
+import java.util.Map;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.brain.MemoryModuleState;
+import net.minecraft.entity.ai.brain.MemoryModuleType;
+import net.minecraft.server.world.ServerWorld;
+
+public abstract class Task<E extends LivingEntity> {
+    protected final Map<MemoryModuleType<?>, MemoryModuleState> requiredMemoryStates;
+    private Status status = Status.STOPPED;
+    private long endTime;
+    private final int minRunTime;
+    private final int maxRunTime;
+
+    public Task(Map<MemoryModuleType<?>, MemoryModuleState> requiredMemoryState) {
+        this(requiredMemoryState, 60);
+    }
+
+    public Task(Map<MemoryModuleType<?>, MemoryModuleState> requiredMemoryState, int runTime) {
+        this(requiredMemoryState, runTime, runTime);
+    }
+
+    public Task(Map<MemoryModuleType<?>, MemoryModuleState> requiredMemoryState, int minRunTime, int maxRunTime) {
+        this.minRunTime = minRunTime;
+        this.maxRunTime = maxRunTime;
+        this.requiredMemoryStates = requiredMemoryState;
+    }
+
+    public Status getStatus() {
+        return this.status;
+    }
+
+    public final boolean tryStarting(ServerWorld world, E entity, long time) {
+        if (this.hasRequiredMemoryState(entity) && this.shouldRun(world, entity)) {
+            this.status = Status.RUNNING;
+            int n = this.minRunTime + world.getRandom().nextInt(this.maxRunTime + 1 - this.minRunTime);
+            this.endTime = time + (long)n;
+            this.run(world, entity, time);
+            return true;
+        }
+        return false;
+    }
+
+    protected void run(ServerWorld world, E entity, long time) {
+    }
+
+    public final void tick(ServerWorld world, E entity, long time) {
+        if (!this.isTimeLimitExceeded(time) && this.shouldKeepRunning(world, entity, time)) {
+            this.keepRunning(world, entity, time);
+        } else {
+            this.stop(world, entity, time);
+        }
+    }
+
+    protected void keepRunning(ServerWorld world, E entity, long time) {
+    }
+
+    public final void stop(ServerWorld world, E entity, long time) {
+        this.status = Status.STOPPED;
+        this.finishRunning(world, entity, time);
+    }
+
+    protected void finishRunning(ServerWorld world, E entity, long time) {
+    }
+
+    protected boolean shouldKeepRunning(ServerWorld world, E entity, long time) {
+        return false;
+    }
+
+    protected boolean isTimeLimitExceeded(long time) {
+        return time > this.endTime;
+    }
+
+    protected boolean shouldRun(ServerWorld world, E entity) {
+        return true;
+    }
+
+    public String toString() {
+        return this.getClass().getSimpleName();
+    }
+
+    private boolean hasRequiredMemoryState(E e) {
+        for (Map.Entry<MemoryModuleType<?>, MemoryModuleState> entry : this.requiredMemoryStates.entrySet()) {
+            MemoryModuleType<?> memoryModuleType = entry.getKey();
+            MemoryModuleState _snowman2 = entry.getValue();
+            if (((LivingEntity)e).getBrain().isMemoryInState(memoryModuleType, _snowman2)) continue;
+            return false;
+        }
+        return true;
+    }
+
+    public static enum Status {
+        STOPPED,
+        RUNNING;
+
+    }
+}
+

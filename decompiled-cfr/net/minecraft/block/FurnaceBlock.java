@@ -1,0 +1,65 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.block;
+
+import java.util.Random;
+import net.minecraft.block.AbstractBlock;
+import net.minecraft.block.AbstractFurnaceBlock;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.FurnaceBlockEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.screen.NamedScreenHandlerFactory;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.stat.Stats;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
+
+public class FurnaceBlock
+extends AbstractFurnaceBlock {
+    protected FurnaceBlock(AbstractBlock.Settings settings) {
+        super(settings);
+    }
+
+    @Override
+    public BlockEntity createBlockEntity(BlockView world) {
+        return new FurnaceBlockEntity();
+    }
+
+    @Override
+    protected void openScreen(World world, BlockPos pos, PlayerEntity player) {
+        BlockEntity blockEntity = world.getBlockEntity(pos);
+        if (blockEntity instanceof FurnaceBlockEntity) {
+            player.openHandledScreen((NamedScreenHandlerFactory)((Object)blockEntity));
+            player.incrementStat(Stats.INTERACT_WITH_FURNACE);
+        }
+    }
+
+    @Override
+    public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
+        if (!state.get(LIT).booleanValue()) {
+            return;
+        }
+        double d = (double)pos.getX() + 0.5;
+        _snowman = pos.getY();
+        _snowman = (double)pos.getZ() + 0.5;
+        if (random.nextDouble() < 0.1) {
+            world.playSound(d, _snowman, _snowman, SoundEvents.BLOCK_FURNACE_FIRE_CRACKLE, SoundCategory.BLOCKS, 1.0f, 1.0f, false);
+        }
+        Direction _snowman2 = state.get(FACING);
+        Direction.Axis _snowman3 = _snowman2.getAxis();
+        _snowman = 0.52;
+        _snowman = random.nextDouble() * 0.6 - 0.3;
+        _snowman = _snowman3 == Direction.Axis.X ? (double)_snowman2.getOffsetX() * 0.52 : _snowman;
+        _snowman = random.nextDouble() * 6.0 / 16.0;
+        _snowman = _snowman3 == Direction.Axis.Z ? (double)_snowman2.getOffsetZ() * 0.52 : _snowman;
+        world.addParticle(ParticleTypes.SMOKE, d + _snowman, _snowman + _snowman, _snowman + _snowman, 0.0, 0.0, 0.0);
+        world.addParticle(ParticleTypes.FLAME, d + _snowman, _snowman + _snowman, _snowman + _snowman, 0.0, 0.0, 0.0);
+    }
+}
+

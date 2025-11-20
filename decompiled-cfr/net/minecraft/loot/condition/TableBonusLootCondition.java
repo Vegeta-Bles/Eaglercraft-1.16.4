@@ -1,0 +1,92 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.ImmutableSet
+ *  com.google.gson.JsonDeserializationContext
+ *  com.google.gson.JsonObject
+ *  com.google.gson.JsonParseException
+ *  com.google.gson.JsonSerializationContext
+ */
+package net.minecraft.loot.condition;
+
+import com.google.common.collect.ImmutableSet;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonSerializationContext;
+import java.util.Set;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.EnchantmentHelper;
+import net.minecraft.item.ItemStack;
+import net.minecraft.loot.condition.LootCondition;
+import net.minecraft.loot.condition.LootConditionType;
+import net.minecraft.loot.condition.LootConditionTypes;
+import net.minecraft.loot.context.LootContext;
+import net.minecraft.loot.context.LootContextParameter;
+import net.minecraft.loot.context.LootContextParameters;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.JsonHelper;
+import net.minecraft.util.JsonSerializer;
+import net.minecraft.util.registry.Registry;
+
+public class TableBonusLootCondition
+implements LootCondition {
+    private final Enchantment enchantment;
+    private final float[] chances;
+
+    private TableBonusLootCondition(Enchantment enchantment, float[] chances) {
+        this.enchantment = enchantment;
+        this.chances = chances;
+    }
+
+    @Override
+    public LootConditionType getType() {
+        return LootConditionTypes.TABLE_BONUS;
+    }
+
+    @Override
+    public Set<LootContextParameter<?>> getRequiredParameters() {
+        return ImmutableSet.of(LootContextParameters.TOOL);
+    }
+
+    @Override
+    public boolean test(LootContext lootContext) {
+        ItemStack itemStack = lootContext.get(LootContextParameters.TOOL);
+        int _snowman2 = itemStack != null ? EnchantmentHelper.getLevel(this.enchantment, itemStack) : 0;
+        float _snowman3 = this.chances[Math.min(_snowman2, this.chances.length - 1)];
+        return lootContext.getRandom().nextFloat() < _snowman3;
+    }
+
+    public static LootCondition.Builder builder(Enchantment enchantment, float ... chances) {
+        return () -> new TableBonusLootCondition(enchantment, chances);
+    }
+
+    @Override
+    public /* synthetic */ boolean test(Object context) {
+        return this.test((LootContext)context);
+    }
+
+    public static class Serializer
+    implements JsonSerializer<TableBonusLootCondition> {
+        @Override
+        public void toJson(JsonObject jsonObject, TableBonusLootCondition tableBonusLootCondition, JsonSerializationContext jsonSerializationContext) {
+            jsonObject.addProperty("enchantment", Registry.ENCHANTMENT.getId(tableBonusLootCondition.enchantment).toString());
+            jsonObject.add("chances", jsonSerializationContext.serialize((Object)tableBonusLootCondition.chances));
+        }
+
+        @Override
+        public TableBonusLootCondition fromJson(JsonObject jsonObject, JsonDeserializationContext jsonDeserializationContext) {
+            Identifier identifier = new Identifier(JsonHelper.getString(jsonObject, "enchantment"));
+            Enchantment _snowman2 = Registry.ENCHANTMENT.getOrEmpty(identifier).orElseThrow(() -> new JsonParseException("Invalid enchantment id: " + identifier));
+            float[] _snowman3 = JsonHelper.deserialize(jsonObject, "chances", jsonDeserializationContext, float[].class);
+            return new TableBonusLootCondition(_snowman2, _snowman3);
+        }
+
+        @Override
+        public /* synthetic */ Object fromJson(JsonObject json, JsonDeserializationContext context) {
+            return this.fromJson(json, context);
+        }
+    }
+}
+

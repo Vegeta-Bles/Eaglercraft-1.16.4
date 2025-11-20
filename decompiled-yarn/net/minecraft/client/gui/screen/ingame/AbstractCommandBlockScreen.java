@@ -1,0 +1,166 @@
+package net.minecraft.client.gui.screen.ingame;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.CommandSuggestor;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.ScreenTexts;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.util.NarratorManager;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.LiteralText;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.world.CommandBlockExecutor;
+
+public abstract class AbstractCommandBlockScreen extends Screen {
+   private static final Text field_26556 = new TranslatableText("advMode.setCommand");
+   private static final Text field_26557 = new TranslatableText("advMode.command");
+   private static final Text field_26558 = new TranslatableText("advMode.previousOutput");
+   protected TextFieldWidget consoleCommandTextField;
+   protected TextFieldWidget previousOutputTextField;
+   protected ButtonWidget doneButton;
+   protected ButtonWidget cancelButton;
+   protected ButtonWidget toggleTrackingOutputButton;
+   protected boolean trackingOutput;
+   private CommandSuggestor commandSuggestor;
+
+   public AbstractCommandBlockScreen() {
+      super(NarratorManager.EMPTY);
+   }
+
+   @Override
+   public void tick() {
+      this.consoleCommandTextField.tick();
+   }
+
+   abstract CommandBlockExecutor getCommandExecutor();
+
+   abstract int getTrackOutputButtonHeight();
+
+   @Override
+   protected void init() {
+      this.client.keyboard.setRepeatEvents(true);
+      this.doneButton = this.addButton(
+         new ButtonWidget(this.width / 2 - 4 - 150, this.height / 4 + 120 + 12, 150, 20, ScreenTexts.DONE, _snowman -> this.commitAndClose())
+      );
+      this.cancelButton = this.addButton(new ButtonWidget(this.width / 2 + 4, this.height / 4 + 120 + 12, 150, 20, ScreenTexts.CANCEL, _snowman -> this.onClose()));
+      this.toggleTrackingOutputButton = this.addButton(
+         new ButtonWidget(this.width / 2 + 150 - 20, this.getTrackOutputButtonHeight(), 20, 20, new LiteralText("O"), _snowman -> {
+            CommandBlockExecutor _snowmanx = this.getCommandExecutor();
+            _snowmanx.shouldTrackOutput(!_snowmanx.isTrackingOutput());
+            this.updateTrackedOutput();
+         })
+      );
+      this.consoleCommandTextField = new TextFieldWidget(this.textRenderer, this.width / 2 - 150, 50, 300, 20, new TranslatableText("advMode.command")) {
+         @Override
+         protected MutableText getNarrationMessage() {
+            return super.getNarrationMessage().append(AbstractCommandBlockScreen.this.commandSuggestor.method_23958());
+         }
+      };
+      this.consoleCommandTextField.setMaxLength(32500);
+      this.consoleCommandTextField.setChangedListener(this::onCommandChanged);
+      this.children.add(this.consoleCommandTextField);
+      this.previousOutputTextField = new TextFieldWidget(
+         this.textRenderer, this.width / 2 - 150, this.getTrackOutputButtonHeight(), 276, 20, new TranslatableText("advMode.previousOutput")
+      );
+      this.previousOutputTextField.setMaxLength(32500);
+      this.previousOutputTextField.setEditable(false);
+      this.previousOutputTextField.setText("-");
+      this.children.add(this.previousOutputTextField);
+      this.setInitialFocus(this.consoleCommandTextField);
+      this.consoleCommandTextField.setSelected(true);
+      this.commandSuggestor = new CommandSuggestor(
+         this.client, this, this.consoleCommandTextField, this.textRenderer, true, true, 0, 7, false, Integer.MIN_VALUE
+      );
+      this.commandSuggestor.setWindowActive(true);
+      this.commandSuggestor.refresh();
+   }
+
+   @Override
+   public void resize(MinecraftClient client, int width, int height) {
+      String _snowman = this.consoleCommandTextField.getText();
+      this.init(client, width, height);
+      this.consoleCommandTextField.setText(_snowman);
+      this.commandSuggestor.refresh();
+   }
+
+   protected void updateTrackedOutput() {
+      if (this.getCommandExecutor().isTrackingOutput()) {
+         this.toggleTrackingOutputButton.setMessage(new LiteralText("O"));
+         this.previousOutputTextField.setText(this.getCommandExecutor().getLastOutput().getString());
+      } else {
+         this.toggleTrackingOutputButton.setMessage(new LiteralText("X"));
+         this.previousOutputTextField.setText("-");
+      }
+   }
+
+   protected void commitAndClose() {
+      CommandBlockExecutor _snowman = this.getCommandExecutor();
+      this.syncSettingsToServer(_snowman);
+      if (!_snowman.isTrackingOutput()) {
+         _snowman.setLastOutput(null);
+      }
+
+      this.client.openScreen(null);
+   }
+
+   @Override
+   public void removed() {
+      this.client.keyboard.setRepeatEvents(false);
+   }
+
+   protected abstract void syncSettingsToServer(CommandBlockExecutor commandExecutor);
+
+   @Override
+   public void onClose() {
+      this.getCommandExecutor().shouldTrackOutput(this.trackingOutput);
+      this.client.openScreen(null);
+   }
+
+   private void onCommandChanged(String text) {
+      this.commandSuggestor.refresh();
+   }
+
+   @Override
+   public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+      if (this.commandSuggestor.keyPressed(keyCode, scanCode, modifiers)) {
+         return true;
+      } else if (super.keyPressed(keyCode, scanCode, modifiers)) {
+         return true;
+      } else if (keyCode != 257 && keyCode != 335) {
+         return false;
+      } else {
+         this.commitAndClose();
+         return true;
+      }
+   }
+
+   @Override
+   public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+      return this.commandSuggestor.mouseScrolled(amount) ? true : super.mouseScrolled(mouseX, mouseY, amount);
+   }
+
+   @Override
+   public boolean mouseClicked(double mouseX, double mouseY, int button) {
+      return this.commandSuggestor.mouseClicked(mouseX, mouseY, button) ? true : super.mouseClicked(mouseX, mouseY, button);
+   }
+
+   @Override
+   public void render(MatrixStack matrices, int mouseX, int mouseY, float delta) {
+      this.renderBackground(matrices);
+      drawCenteredText(matrices, this.textRenderer, field_26556, this.width / 2, 20, 16777215);
+      drawTextWithShadow(matrices, this.textRenderer, field_26557, this.width / 2 - 150, 40, 10526880);
+      this.consoleCommandTextField.render(matrices, mouseX, mouseY, delta);
+      int _snowman = 75;
+      if (!this.previousOutputTextField.getText().isEmpty()) {
+         _snowman += 5 * 9 + 1 + this.getTrackOutputButtonHeight() - 135;
+         drawTextWithShadow(matrices, this.textRenderer, field_26558, this.width / 2 - 150, _snowman + 4, 10526880);
+         this.previousOutputTextField.render(matrices, mouseX, mouseY, delta);
+      }
+
+      super.render(matrices, mouseX, mouseY, delta);
+      this.commandSuggestor.render(matrices, mouseX, mouseY);
+   }
+}

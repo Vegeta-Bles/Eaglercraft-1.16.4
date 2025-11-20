@@ -1,0 +1,111 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.serialization.Codec
+ */
+package net.minecraft.world.gen.feature;
+
+import com.mojang.serialization.Codec;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Collectors;
+import net.minecraft.structure.MineshaftGenerator;
+import net.minecraft.structure.StructureManager;
+import net.minecraft.structure.StructurePiece;
+import net.minecraft.structure.StructureStart;
+import net.minecraft.util.StringIdentifiable;
+import net.minecraft.util.math.BlockBox;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.registry.DynamicRegistryManager;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.source.BiomeSource;
+import net.minecraft.world.gen.ChunkRandom;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+import net.minecraft.world.gen.feature.MineshaftFeatureConfig;
+import net.minecraft.world.gen.feature.StructureFeature;
+
+public class MineshaftFeature
+extends StructureFeature<MineshaftFeatureConfig> {
+    public MineshaftFeature(Codec<MineshaftFeatureConfig> codec) {
+        super(codec);
+    }
+
+    @Override
+    protected boolean shouldStartAt(ChunkGenerator chunkGenerator, BiomeSource biomeSource, long l, ChunkRandom chunkRandom, int n, int n2, Biome biome, ChunkPos chunkPos, MineshaftFeatureConfig mineshaftFeatureConfig) {
+        chunkRandom.setCarverSeed(l, n, n2);
+        double d = mineshaftFeatureConfig.probability;
+        return chunkRandom.nextDouble() < d;
+    }
+
+    @Override
+    public StructureFeature.StructureStartFactory<MineshaftFeatureConfig> getStructureStartFactory() {
+        return Start::new;
+    }
+
+    public static class Start
+    extends StructureStart<MineshaftFeatureConfig> {
+        public Start(StructureFeature<MineshaftFeatureConfig> structureFeature, int n, int n2, BlockBox blockBox, int n3, long l) {
+            super(structureFeature, n, n2, blockBox, n3, l);
+        }
+
+        @Override
+        public void init(DynamicRegistryManager dynamicRegistryManager, ChunkGenerator chunkGenerator2, StructureManager structureManager, int n, int n2, Biome biome, MineshaftFeatureConfig mineshaftFeatureConfig) {
+            MineshaftGenerator.MineshaftRoom mineshaftRoom = new MineshaftGenerator.MineshaftRoom(0, this.random, (n << 4) + 2, (n2 << 4) + 2, mineshaftFeatureConfig.type);
+            this.children.add(mineshaftRoom);
+            mineshaftRoom.fillOpenings(mineshaftRoom, this.children, this.random);
+            this.setBoundingBoxFromChildren();
+            if (mineshaftFeatureConfig.type == Type.MESA) {
+                int n3 = -5;
+                _snowman = chunkGenerator2.getSeaLevel() - this.boundingBox.maxY + this.boundingBox.getBlockCountY() / 2 - -5;
+                this.boundingBox.move(0, _snowman, 0);
+                for (StructurePiece structurePiece : this.children) {
+                    structurePiece.translate(0, _snowman, 0);
+                }
+            } else {
+                ChunkGenerator chunkGenerator2;
+                this.randomUpwardTranslation(chunkGenerator2.getSeaLevel(), this.random, 10);
+            }
+        }
+    }
+
+    public static enum Type implements StringIdentifiable
+    {
+        NORMAL("normal"),
+        MESA("mesa");
+
+        public static final Codec<Type> CODEC;
+        private static final Map<String, Type> BY_NAME;
+        private final String name;
+
+        private Type(String name) {
+            this.name = name;
+        }
+
+        public String getName() {
+            return this.name;
+        }
+
+        private static Type byName(String name) {
+            return BY_NAME.get(name);
+        }
+
+        public static Type byIndex(int index) {
+            if (index < 0 || index >= Type.values().length) {
+                return NORMAL;
+            }
+            return Type.values()[index];
+        }
+
+        @Override
+        public String asString() {
+            return this.name;
+        }
+
+        static {
+            CODEC = StringIdentifiable.createCodec(Type::values, Type::byName);
+            BY_NAME = Arrays.stream(Type.values()).collect(Collectors.toMap(Type::getName, type -> type));
+        }
+    }
+}
+

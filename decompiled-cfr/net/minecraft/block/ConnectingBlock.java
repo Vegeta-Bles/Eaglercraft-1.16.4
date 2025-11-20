@@ -1,0 +1,88 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.Maps
+ */
+package net.minecraft.block;
+
+import com.google.common.collect.Maps;
+import java.util.Map;
+import net.minecraft.block.AbstractBlock;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.ShapeContext;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.Util;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
+
+public class ConnectingBlock
+extends Block {
+    private static final Direction[] FACINGS = Direction.values();
+    public static final BooleanProperty NORTH = Properties.NORTH;
+    public static final BooleanProperty EAST = Properties.EAST;
+    public static final BooleanProperty SOUTH = Properties.SOUTH;
+    public static final BooleanProperty WEST = Properties.WEST;
+    public static final BooleanProperty UP = Properties.UP;
+    public static final BooleanProperty DOWN = Properties.DOWN;
+    public static final Map<Direction, BooleanProperty> FACING_PROPERTIES = Util.make(Maps.newEnumMap(Direction.class), enumMap -> {
+        enumMap.put(Direction.NORTH, NORTH);
+        enumMap.put(Direction.EAST, EAST);
+        enumMap.put(Direction.SOUTH, SOUTH);
+        enumMap.put(Direction.WEST, WEST);
+        enumMap.put(Direction.UP, UP);
+        enumMap.put(Direction.DOWN, DOWN);
+    });
+    protected final VoxelShape[] CONNECTIONS_TO_SHAPE;
+
+    protected ConnectingBlock(float radius, AbstractBlock.Settings settings) {
+        super(settings);
+        this.CONNECTIONS_TO_SHAPE = this.generateFacingsToShapeMap(radius);
+    }
+
+    private VoxelShape[] generateFacingsToShapeMap(float radius) {
+        float f = 0.5f - radius;
+        _snowman = 0.5f + radius;
+        VoxelShape _snowman2 = Block.createCuboidShape(f * 16.0f, f * 16.0f, f * 16.0f, _snowman * 16.0f, _snowman * 16.0f, _snowman * 16.0f);
+        VoxelShape[] _snowman3 = new VoxelShape[FACINGS.length];
+        for (int i = 0; i < FACINGS.length; ++i) {
+            Direction direction = FACINGS[i];
+            _snowman3[i] = VoxelShapes.cuboid(0.5 + Math.min((double)(-radius), (double)direction.getOffsetX() * 0.5), 0.5 + Math.min((double)(-radius), (double)direction.getOffsetY() * 0.5), 0.5 + Math.min((double)(-radius), (double)direction.getOffsetZ() * 0.5), 0.5 + Math.max((double)radius, (double)direction.getOffsetX() * 0.5), 0.5 + Math.max((double)radius, (double)direction.getOffsetY() * 0.5), 0.5 + Math.max((double)radius, (double)direction.getOffsetZ() * 0.5));
+        }
+        VoxelShape[] voxelShapeArray = new VoxelShape[64];
+        for (int i = 0; i < 64; ++i) {
+            VoxelShape voxelShape = _snowman2;
+            for (int j = 0; j < FACINGS.length; ++j) {
+                if ((i & 1 << j) == 0) continue;
+                voxelShape = VoxelShapes.union(voxelShape, _snowman3[j]);
+            }
+            voxelShapeArray[i] = voxelShape;
+        }
+        return voxelShapeArray;
+    }
+
+    @Override
+    public boolean isTranslucent(BlockState state, BlockView world, BlockPos pos) {
+        return false;
+    }
+
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return this.CONNECTIONS_TO_SHAPE[this.getConnectionMask(state)];
+    }
+
+    protected int getConnectionMask(BlockState state) {
+        int n = 0;
+        for (_snowman = 0; _snowman < FACINGS.length; ++_snowman) {
+            if (!((Boolean)state.get(FACING_PROPERTIES.get(FACINGS[_snowman]))).booleanValue()) continue;
+            n |= 1 << _snowman;
+        }
+        return n;
+    }
+}
+

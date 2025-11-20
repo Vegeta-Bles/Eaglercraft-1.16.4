@@ -1,0 +1,382 @@
+package net.minecraft.client.particle;
+
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.fluid.Fluid;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.particle.DefaultParticleType;
+import net.minecraft.particle.ParticleEffect;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+
+@Environment(EnvType.CLIENT)
+public class BlockLeakParticle extends SpriteBillboardParticle {
+   private final Fluid fluid;
+   protected boolean obsidianTear;
+
+   private BlockLeakParticle(ClientWorld world, double x, double y, double z, Fluid fluid) {
+      super(world, x, y, z);
+      this.setBoundingBoxSpacing(0.01F, 0.01F);
+      this.gravityStrength = 0.06F;
+      this.fluid = fluid;
+   }
+
+   @Override
+   public ParticleTextureSheet getType() {
+      return ParticleTextureSheet.PARTICLE_SHEET_OPAQUE;
+   }
+
+   @Override
+   public int getColorMultiplier(float tint) {
+      return this.obsidianTear ? 240 : super.getColorMultiplier(tint);
+   }
+
+   @Override
+   public void tick() {
+      this.prevPosX = this.x;
+      this.prevPosY = this.y;
+      this.prevPosZ = this.z;
+      this.updateAge();
+      if (!this.dead) {
+         this.velocityY = this.velocityY - (double)this.gravityStrength;
+         this.move(this.velocityX, this.velocityY, this.velocityZ);
+         this.updateVelocity();
+         if (!this.dead) {
+            this.velocityX *= 0.98F;
+            this.velocityY *= 0.98F;
+            this.velocityZ *= 0.98F;
+            BlockPos lv = new BlockPos(this.x, this.y, this.z);
+            FluidState lv2 = this.world.getFluidState(lv);
+            if (lv2.getFluid() == this.fluid && this.y < (double)((float)lv.getY() + lv2.getHeight(this.world, lv))) {
+               this.markDead();
+            }
+         }
+      }
+   }
+
+   protected void updateAge() {
+      if (this.maxAge-- <= 0) {
+         this.markDead();
+      }
+   }
+
+   protected void updateVelocity() {
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class ContinuousFalling extends BlockLeakParticle.Falling {
+      protected final ParticleEffect nextParticle;
+
+      private ContinuousFalling(ClientWorld arg, double x, double y, double z, Fluid fluid, ParticleEffect nextParticle) {
+         super(arg, x, y, z, fluid);
+         this.nextParticle = nextParticle;
+      }
+
+      @Override
+      protected void updateVelocity() {
+         if (this.onGround) {
+            this.markDead();
+            this.world.addParticle(this.nextParticle, this.x, this.y, this.z, 0.0, 0.0, 0.0);
+         }
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class Dripping extends BlockLeakParticle {
+      private final ParticleEffect nextParticle;
+
+      private Dripping(ClientWorld arg, double x, double y, double z, Fluid fluid, ParticleEffect nextParticle) {
+         super(arg, x, y, z, fluid);
+         this.nextParticle = nextParticle;
+         this.gravityStrength *= 0.02F;
+         this.maxAge = 40;
+      }
+
+      @Override
+      protected void updateAge() {
+         if (this.maxAge-- <= 0) {
+            this.markDead();
+            this.world.addParticle(this.nextParticle, this.x, this.y, this.z, this.velocityX, this.velocityY, this.velocityZ);
+         }
+      }
+
+      @Override
+      protected void updateVelocity() {
+         this.velocityX *= 0.02;
+         this.velocityY *= 0.02;
+         this.velocityZ *= 0.02;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class DrippingHoneyFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public DrippingHoneyFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle.Dripping lv = new BlockLeakParticle.Dripping(arg2, d, e, f, Fluids.EMPTY, ParticleTypes.FALLING_HONEY);
+         lv.gravityStrength *= 0.01F;
+         lv.maxAge = 100;
+         lv.setColor(0.622F, 0.508F, 0.082F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class DrippingLava extends BlockLeakParticle.Dripping {
+      private DrippingLava(ClientWorld arg, double x, double y, double z, Fluid fluid, ParticleEffect nextParticle) {
+         super(arg, x, y, z, fluid, nextParticle);
+      }
+
+      @Override
+      protected void updateAge() {
+         this.colorRed = 1.0F;
+         this.colorGreen = 16.0F / (float)(40 - this.maxAge + 16);
+         this.colorBlue = 4.0F / (float)(40 - this.maxAge + 8);
+         super.updateAge();
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class DrippingLavaFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public DrippingLavaFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle.DrippingLava lv = new BlockLeakParticle.DrippingLava(arg2, d, e, f, Fluids.LAVA, ParticleTypes.FALLING_LAVA);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class DrippingObsidianTearFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public DrippingObsidianTearFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle.Dripping lv = new BlockLeakParticle.Dripping(arg2, d, e, f, Fluids.EMPTY, ParticleTypes.FALLING_OBSIDIAN_TEAR);
+         lv.obsidianTear = true;
+         lv.gravityStrength *= 0.01F;
+         lv.maxAge = 100;
+         lv.setColor(0.51171875F, 0.03125F, 0.890625F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class DrippingWaterFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public DrippingWaterFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.Dripping(arg2, d, e, f, Fluids.WATER, ParticleTypes.FALLING_WATER);
+         lv.setColor(0.2F, 0.3F, 1.0F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class Falling extends BlockLeakParticle {
+      private Falling(ClientWorld world, double x, double y, double z, Fluid fluid) {
+         super(world, x, y, z, fluid);
+         this.maxAge = (int)(64.0 / (Math.random() * 0.8 + 0.2));
+      }
+
+      @Override
+      protected void updateVelocity() {
+         if (this.onGround) {
+            this.markDead();
+         }
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class FallingHoney extends BlockLeakParticle.ContinuousFalling {
+      private FallingHoney(ClientWorld world, double x, double y, double z, Fluid fluid, ParticleEffect arg3) {
+         super(world, x, y, z, fluid, arg3);
+      }
+
+      @Override
+      protected void updateVelocity() {
+         if (this.onGround) {
+            this.markDead();
+            this.world.addParticle(this.nextParticle, this.x, this.y, this.z, 0.0, 0.0, 0.0);
+            this.world
+               .playSound(
+                  this.x + 0.5,
+                  this.y,
+                  this.z + 0.5,
+                  SoundEvents.BLOCK_BEEHIVE_DRIP,
+                  SoundCategory.BLOCKS,
+                  0.3F + this.world.random.nextFloat() * 2.0F / 3.0F,
+                  1.0F,
+                  false
+               );
+         }
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class FallingHoneyFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public FallingHoneyFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.FallingHoney(arg2, d, e, f, Fluids.EMPTY, ParticleTypes.LANDING_HONEY);
+         lv.gravityStrength = 0.01F;
+         lv.setColor(0.582F, 0.448F, 0.082F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class FallingLavaFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public FallingLavaFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.ContinuousFalling(arg2, d, e, f, Fluids.LAVA, ParticleTypes.LANDING_LAVA);
+         lv.setColor(1.0F, 0.2857143F, 0.083333336F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class FallingNectarFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public FallingNectarFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.Falling(arg2, d, e, f, Fluids.EMPTY);
+         lv.maxAge = (int)(16.0 / (Math.random() * 0.8 + 0.2));
+         lv.gravityStrength = 0.007F;
+         lv.setColor(0.92F, 0.782F, 0.72F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class FallingObsidianTearFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public FallingObsidianTearFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.ContinuousFalling(arg2, d, e, f, Fluids.EMPTY, ParticleTypes.LANDING_OBSIDIAN_TEAR);
+         lv.obsidianTear = true;
+         lv.gravityStrength = 0.01F;
+         lv.setColor(0.51171875F, 0.03125F, 0.890625F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class FallingWaterFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public FallingWaterFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.ContinuousFalling(arg2, d, e, f, Fluids.WATER, ParticleTypes.SPLASH);
+         lv.setColor(0.2F, 0.3F, 1.0F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   static class Landing extends BlockLeakParticle {
+      private Landing(ClientWorld world, double x, double y, double z, Fluid fluid) {
+         super(world, x, y, z, fluid);
+         this.maxAge = (int)(16.0 / (Math.random() * 0.8 + 0.2));
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class LandingHoneyFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public LandingHoneyFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.Landing(arg2, d, e, f, Fluids.EMPTY);
+         lv.maxAge = (int)(128.0 / (Math.random() * 0.8 + 0.2));
+         lv.setColor(0.522F, 0.408F, 0.082F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class LandingLavaFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public LandingLavaFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.Landing(arg2, d, e, f, Fluids.LAVA);
+         lv.setColor(1.0F, 0.2857143F, 0.083333336F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static class LandingObsidianTearFactory implements ParticleFactory<DefaultParticleType> {
+      protected final SpriteProvider spriteProvider;
+
+      public LandingObsidianTearFactory(SpriteProvider spriteProvider) {
+         this.spriteProvider = spriteProvider;
+      }
+
+      public Particle createParticle(DefaultParticleType arg, ClientWorld arg2, double d, double e, double f, double g, double h, double i) {
+         BlockLeakParticle lv = new BlockLeakParticle.Landing(arg2, d, e, f, Fluids.EMPTY);
+         lv.obsidianTear = true;
+         lv.maxAge = (int)(28.0 / (Math.random() * 0.8 + 0.2));
+         lv.setColor(0.51171875F, 0.03125F, 0.890625F);
+         lv.setSprite(this.spriteProvider);
+         return lv;
+      }
+   }
+}

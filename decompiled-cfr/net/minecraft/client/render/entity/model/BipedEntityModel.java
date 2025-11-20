@@ -1,0 +1,393 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.ImmutableList
+ */
+package net.minecraft.client.render.entity.model;
+
+import com.google.common.collect.ImmutableList;
+import java.util.function.Function;
+import net.minecraft.client.model.ModelPart;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.entity.model.AnimalModel;
+import net.minecraft.client.render.entity.model.CrossbowPosing;
+import net.minecraft.client.render.entity.model.ModelWithArms;
+import net.minecraft.client.render.entity.model.ModelWithHead;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.util.Arm;
+import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
+
+public class BipedEntityModel<T extends LivingEntity>
+extends AnimalModel<T>
+implements ModelWithArms,
+ModelWithHead {
+    public ModelPart head;
+    public ModelPart helmet;
+    public ModelPart torso;
+    public ModelPart rightArm;
+    public ModelPart leftArm;
+    public ModelPart rightLeg;
+    public ModelPart leftLeg;
+    public ArmPose leftArmPose = ArmPose.EMPTY;
+    public ArmPose rightArmPose = ArmPose.EMPTY;
+    public boolean sneaking;
+    public float leaningPitch;
+
+    public BipedEntityModel(float scale) {
+        this(RenderLayer::getEntityCutoutNoCull, scale, 0.0f, 64, 32);
+    }
+
+    protected BipedEntityModel(float scale, float pivotY, int textureWidth, int textureHeight) {
+        this(RenderLayer::getEntityCutoutNoCull, scale, pivotY, textureWidth, textureHeight);
+    }
+
+    public BipedEntityModel(Function<Identifier, RenderLayer> texturedLayerFactory, float scale, float pivotY, int textureWidth, int textureHeight) {
+        super(texturedLayerFactory, true, 16.0f, 0.0f, 2.0f, 2.0f, 24.0f);
+        this.textureWidth = textureWidth;
+        this.textureHeight = textureHeight;
+        this.head = new ModelPart(this, 0, 0);
+        this.head.addCuboid(-4.0f, -8.0f, -4.0f, 8.0f, 8.0f, 8.0f, scale);
+        this.head.setPivot(0.0f, 0.0f + pivotY, 0.0f);
+        this.helmet = new ModelPart(this, 32, 0);
+        this.helmet.addCuboid(-4.0f, -8.0f, -4.0f, 8.0f, 8.0f, 8.0f, scale + 0.5f);
+        this.helmet.setPivot(0.0f, 0.0f + pivotY, 0.0f);
+        this.torso = new ModelPart(this, 16, 16);
+        this.torso.addCuboid(-4.0f, 0.0f, -2.0f, 8.0f, 12.0f, 4.0f, scale);
+        this.torso.setPivot(0.0f, 0.0f + pivotY, 0.0f);
+        this.rightArm = new ModelPart(this, 40, 16);
+        this.rightArm.addCuboid(-3.0f, -2.0f, -2.0f, 4.0f, 12.0f, 4.0f, scale);
+        this.rightArm.setPivot(-5.0f, 2.0f + pivotY, 0.0f);
+        this.leftArm = new ModelPart(this, 40, 16);
+        this.leftArm.mirror = true;
+        this.leftArm.addCuboid(-1.0f, -2.0f, -2.0f, 4.0f, 12.0f, 4.0f, scale);
+        this.leftArm.setPivot(5.0f, 2.0f + pivotY, 0.0f);
+        this.rightLeg = new ModelPart(this, 0, 16);
+        this.rightLeg.addCuboid(-2.0f, 0.0f, -2.0f, 4.0f, 12.0f, 4.0f, scale);
+        this.rightLeg.setPivot(-1.9f, 12.0f + pivotY, 0.0f);
+        this.leftLeg = new ModelPart(this, 0, 16);
+        this.leftLeg.mirror = true;
+        this.leftLeg.addCuboid(-2.0f, 0.0f, -2.0f, 4.0f, 12.0f, 4.0f, scale);
+        this.leftLeg.setPivot(1.9f, 12.0f + pivotY, 0.0f);
+    }
+
+    @Override
+    protected Iterable<ModelPart> getHeadParts() {
+        return ImmutableList.of((Object)this.head);
+    }
+
+    @Override
+    protected Iterable<ModelPart> getBodyParts() {
+        return ImmutableList.of((Object)this.torso, (Object)this.rightArm, (Object)this.leftArm, (Object)this.rightLeg, (Object)this.leftLeg, (Object)this.helmet);
+    }
+
+    @Override
+    public void animateModel(T t, float f, float f2, float f3) {
+        this.leaningPitch = ((LivingEntity)t).getLeaningPitch(f3);
+        super.animateModel(t, f, f2, f3);
+    }
+
+    @Override
+    public void setAngles(T t, float f, float f2, float f3, float f4, float f5) {
+        boolean bl = ((LivingEntity)t).getRoll() > 4;
+        _snowman = ((LivingEntity)t).isInSwimmingPose();
+        this.head.yaw = f4 * ((float)Math.PI / 180);
+        this.head.pitch = bl ? -0.7853982f : (this.leaningPitch > 0.0f ? (_snowman ? this.lerpAngle(this.leaningPitch, this.head.pitch, -0.7853982f) : this.lerpAngle(this.leaningPitch, this.head.pitch, f5 * ((float)Math.PI / 180))) : f5 * ((float)Math.PI / 180));
+        this.torso.yaw = 0.0f;
+        this.rightArm.pivotZ = 0.0f;
+        this.rightArm.pivotX = -5.0f;
+        this.leftArm.pivotZ = 0.0f;
+        this.leftArm.pivotX = 5.0f;
+        float _snowman2 = 1.0f;
+        if (bl) {
+            _snowman2 = (float)((Entity)t).getVelocity().lengthSquared();
+            _snowman2 /= 0.2f;
+            _snowman2 *= _snowman2 * _snowman2;
+        }
+        if (_snowman2 < 1.0f) {
+            _snowman2 = 1.0f;
+        }
+        this.rightArm.pitch = MathHelper.cos(f * 0.6662f + (float)Math.PI) * 2.0f * f2 * 0.5f / _snowman2;
+        this.leftArm.pitch = MathHelper.cos(f * 0.6662f) * 2.0f * f2 * 0.5f / _snowman2;
+        this.rightArm.roll = 0.0f;
+        this.leftArm.roll = 0.0f;
+        this.rightLeg.pitch = MathHelper.cos(f * 0.6662f) * 1.4f * f2 / _snowman2;
+        this.leftLeg.pitch = MathHelper.cos(f * 0.6662f + (float)Math.PI) * 1.4f * f2 / _snowman2;
+        this.rightLeg.yaw = 0.0f;
+        this.leftLeg.yaw = 0.0f;
+        this.rightLeg.roll = 0.0f;
+        this.leftLeg.roll = 0.0f;
+        if (this.riding) {
+            this.rightArm.pitch += -0.62831855f;
+            this.leftArm.pitch += -0.62831855f;
+            this.rightLeg.pitch = -1.4137167f;
+            this.rightLeg.yaw = 0.31415927f;
+            this.rightLeg.roll = 0.07853982f;
+            this.leftLeg.pitch = -1.4137167f;
+            this.leftLeg.yaw = -0.31415927f;
+            this.leftLeg.roll = -0.07853982f;
+        }
+        this.rightArm.yaw = 0.0f;
+        this.leftArm.yaw = 0.0f;
+        _snowman = ((LivingEntity)t).getMainArm() == Arm.RIGHT;
+        boolean bl2 = _snowman = _snowman ? this.leftArmPose.method_30156() : this.rightArmPose.method_30156();
+        if (_snowman != _snowman) {
+            this.method_30155(t);
+            this.method_30154(t);
+        } else {
+            this.method_30154(t);
+            this.method_30155(t);
+        }
+        this.method_29353(t, f3);
+        if (this.sneaking) {
+            this.torso.pitch = 0.5f;
+            this.rightArm.pitch += 0.4f;
+            this.leftArm.pitch += 0.4f;
+            this.rightLeg.pivotZ = 4.0f;
+            this.leftLeg.pivotZ = 4.0f;
+            this.rightLeg.pivotY = 12.2f;
+            this.leftLeg.pivotY = 12.2f;
+            this.head.pivotY = 4.2f;
+            this.torso.pivotY = 3.2f;
+            this.leftArm.pivotY = 5.2f;
+            this.rightArm.pivotY = 5.2f;
+        } else {
+            this.torso.pitch = 0.0f;
+            this.rightLeg.pivotZ = 0.1f;
+            this.leftLeg.pivotZ = 0.1f;
+            this.rightLeg.pivotY = 12.0f;
+            this.leftLeg.pivotY = 12.0f;
+            this.head.pivotY = 0.0f;
+            this.torso.pivotY = 0.0f;
+            this.leftArm.pivotY = 2.0f;
+            this.rightArm.pivotY = 2.0f;
+        }
+        CrossbowPosing.method_29350(this.rightArm, this.leftArm, f3);
+        if (this.leaningPitch > 0.0f) {
+            float f6 = f % 26.0f;
+            Arm _snowman3 = this.getPreferredArm(t);
+            _snowman = _snowman3 == Arm.RIGHT && this.handSwingProgress > 0.0f ? 0.0f : this.leaningPitch;
+            float f7 = _snowman = _snowman3 == Arm.LEFT && this.handSwingProgress > 0.0f ? 0.0f : this.leaningPitch;
+            if (f6 < 14.0f) {
+                this.leftArm.pitch = this.lerpAngle(_snowman, this.leftArm.pitch, 0.0f);
+                this.rightArm.pitch = MathHelper.lerp(_snowman, this.rightArm.pitch, 0.0f);
+                this.leftArm.yaw = this.lerpAngle(_snowman, this.leftArm.yaw, (float)Math.PI);
+                this.rightArm.yaw = MathHelper.lerp(_snowman, this.rightArm.yaw, (float)Math.PI);
+                this.leftArm.roll = this.lerpAngle(_snowman, this.leftArm.roll, (float)Math.PI + 1.8707964f * this.method_2807(f6) / this.method_2807(14.0f));
+                this.rightArm.roll = MathHelper.lerp(_snowman, this.rightArm.roll, (float)Math.PI - 1.8707964f * this.method_2807(f6) / this.method_2807(14.0f));
+            } else if (f6 >= 14.0f && f6 < 22.0f) {
+                _snowman = (f6 - 14.0f) / 8.0f;
+                this.leftArm.pitch = this.lerpAngle(_snowman, this.leftArm.pitch, 1.5707964f * _snowman);
+                this.rightArm.pitch = MathHelper.lerp(_snowman, this.rightArm.pitch, 1.5707964f * _snowman);
+                this.leftArm.yaw = this.lerpAngle(_snowman, this.leftArm.yaw, (float)Math.PI);
+                this.rightArm.yaw = MathHelper.lerp(_snowman, this.rightArm.yaw, (float)Math.PI);
+                this.leftArm.roll = this.lerpAngle(_snowman, this.leftArm.roll, 5.012389f - 1.8707964f * _snowman);
+                this.rightArm.roll = MathHelper.lerp(_snowman, this.rightArm.roll, 1.2707963f + 1.8707964f * _snowman);
+            } else if (f6 >= 22.0f && f6 < 26.0f) {
+                _snowman = (f6 - 22.0f) / 4.0f;
+                this.leftArm.pitch = this.lerpAngle(_snowman, this.leftArm.pitch, 1.5707964f - 1.5707964f * _snowman);
+                this.rightArm.pitch = MathHelper.lerp(_snowman, this.rightArm.pitch, 1.5707964f - 1.5707964f * _snowman);
+                this.leftArm.yaw = this.lerpAngle(_snowman, this.leftArm.yaw, (float)Math.PI);
+                this.rightArm.yaw = MathHelper.lerp(_snowman, this.rightArm.yaw, (float)Math.PI);
+                this.leftArm.roll = this.lerpAngle(_snowman, this.leftArm.roll, (float)Math.PI);
+                this.rightArm.roll = MathHelper.lerp(_snowman, this.rightArm.roll, (float)Math.PI);
+            }
+            _snowman = 0.3f;
+            _snowman = 0.33333334f;
+            this.leftLeg.pitch = MathHelper.lerp(this.leaningPitch, this.leftLeg.pitch, 0.3f * MathHelper.cos(f * 0.33333334f + (float)Math.PI));
+            this.rightLeg.pitch = MathHelper.lerp(this.leaningPitch, this.rightLeg.pitch, 0.3f * MathHelper.cos(f * 0.33333334f));
+        }
+        this.helmet.copyPositionAndRotation(this.head);
+    }
+
+    private void method_30154(T t) {
+        switch (this.rightArmPose) {
+            case EMPTY: {
+                this.rightArm.yaw = 0.0f;
+                break;
+            }
+            case BLOCK: {
+                this.rightArm.pitch = this.rightArm.pitch * 0.5f - 0.9424779f;
+                this.rightArm.yaw = -0.5235988f;
+                break;
+            }
+            case ITEM: {
+                this.rightArm.pitch = this.rightArm.pitch * 0.5f - 0.31415927f;
+                this.rightArm.yaw = 0.0f;
+                break;
+            }
+            case THROW_SPEAR: {
+                this.rightArm.pitch = this.rightArm.pitch * 0.5f - (float)Math.PI;
+                this.rightArm.yaw = 0.0f;
+                break;
+            }
+            case BOW_AND_ARROW: {
+                this.rightArm.yaw = -0.1f + this.head.yaw;
+                this.leftArm.yaw = 0.1f + this.head.yaw + 0.4f;
+                this.rightArm.pitch = -1.5707964f + this.head.pitch;
+                this.leftArm.pitch = -1.5707964f + this.head.pitch;
+                break;
+            }
+            case CROSSBOW_CHARGE: {
+                CrossbowPosing.charge(this.rightArm, this.leftArm, t, true);
+                break;
+            }
+            case CROSSBOW_HOLD: {
+                CrossbowPosing.hold(this.rightArm, this.leftArm, this.head, true);
+            }
+        }
+    }
+
+    private void method_30155(T t) {
+        switch (this.leftArmPose) {
+            case EMPTY: {
+                this.leftArm.yaw = 0.0f;
+                break;
+            }
+            case BLOCK: {
+                this.leftArm.pitch = this.leftArm.pitch * 0.5f - 0.9424779f;
+                this.leftArm.yaw = 0.5235988f;
+                break;
+            }
+            case ITEM: {
+                this.leftArm.pitch = this.leftArm.pitch * 0.5f - 0.31415927f;
+                this.leftArm.yaw = 0.0f;
+                break;
+            }
+            case THROW_SPEAR: {
+                this.leftArm.pitch = this.leftArm.pitch * 0.5f - (float)Math.PI;
+                this.leftArm.yaw = 0.0f;
+                break;
+            }
+            case BOW_AND_ARROW: {
+                this.rightArm.yaw = -0.1f + this.head.yaw - 0.4f;
+                this.leftArm.yaw = 0.1f + this.head.yaw;
+                this.rightArm.pitch = -1.5707964f + this.head.pitch;
+                this.leftArm.pitch = -1.5707964f + this.head.pitch;
+                break;
+            }
+            case CROSSBOW_CHARGE: {
+                CrossbowPosing.charge(this.rightArm, this.leftArm, t, false);
+                break;
+            }
+            case CROSSBOW_HOLD: {
+                CrossbowPosing.hold(this.rightArm, this.leftArm, this.head, false);
+            }
+        }
+    }
+
+    protected void method_29353(T t, float f) {
+        if (this.handSwingProgress <= 0.0f) {
+            return;
+        }
+        Arm arm = this.getPreferredArm(t);
+        ModelPart _snowman2 = this.getArm(arm);
+        float _snowman3 = this.handSwingProgress;
+        this.torso.yaw = MathHelper.sin(MathHelper.sqrt(_snowman3) * ((float)Math.PI * 2)) * 0.2f;
+        if (arm == Arm.LEFT) {
+            this.torso.yaw *= -1.0f;
+        }
+        this.rightArm.pivotZ = MathHelper.sin(this.torso.yaw) * 5.0f;
+        this.rightArm.pivotX = -MathHelper.cos(this.torso.yaw) * 5.0f;
+        this.leftArm.pivotZ = -MathHelper.sin(this.torso.yaw) * 5.0f;
+        this.leftArm.pivotX = MathHelper.cos(this.torso.yaw) * 5.0f;
+        this.rightArm.yaw += this.torso.yaw;
+        this.leftArm.yaw += this.torso.yaw;
+        this.leftArm.pitch += this.torso.yaw;
+        _snowman3 = 1.0f - this.handSwingProgress;
+        _snowman3 *= _snowman3;
+        _snowman3 *= _snowman3;
+        _snowman3 = 1.0f - _snowman3;
+        float _snowman4 = MathHelper.sin(_snowman3 * (float)Math.PI);
+        float _snowman5 = MathHelper.sin(this.handSwingProgress * (float)Math.PI) * -(this.head.pitch - 0.7f) * 0.75f;
+        _snowman2.pitch = (float)((double)_snowman2.pitch - ((double)_snowman4 * 1.2 + (double)_snowman5));
+        _snowman2.yaw += this.torso.yaw * 2.0f;
+        _snowman2.roll += MathHelper.sin(this.handSwingProgress * (float)Math.PI) * -0.4f;
+    }
+
+    protected float lerpAngle(float f, float f2, float f3) {
+        _snowman = (f3 - f2) % ((float)Math.PI * 2);
+        if (_snowman < (float)(-Math.PI)) {
+            _snowman += (float)Math.PI * 2;
+        }
+        if (_snowman >= (float)Math.PI) {
+            _snowman -= (float)Math.PI * 2;
+        }
+        return f2 + f * _snowman;
+    }
+
+    private float method_2807(float f) {
+        return -65.0f * f + f * f;
+    }
+
+    public void setAttributes(BipedEntityModel<T> bipedEntityModel) {
+        super.copyStateTo(bipedEntityModel);
+        bipedEntityModel.leftArmPose = this.leftArmPose;
+        bipedEntityModel.rightArmPose = this.rightArmPose;
+        bipedEntityModel.sneaking = this.sneaking;
+        bipedEntityModel.head.copyPositionAndRotation(this.head);
+        bipedEntityModel.helmet.copyPositionAndRotation(this.helmet);
+        bipedEntityModel.torso.copyPositionAndRotation(this.torso);
+        bipedEntityModel.rightArm.copyPositionAndRotation(this.rightArm);
+        bipedEntityModel.leftArm.copyPositionAndRotation(this.leftArm);
+        bipedEntityModel.rightLeg.copyPositionAndRotation(this.rightLeg);
+        bipedEntityModel.leftLeg.copyPositionAndRotation(this.leftLeg);
+    }
+
+    public void setVisible(boolean visible) {
+        this.head.visible = visible;
+        this.helmet.visible = visible;
+        this.torso.visible = visible;
+        this.rightArm.visible = visible;
+        this.leftArm.visible = visible;
+        this.rightLeg.visible = visible;
+        this.leftLeg.visible = visible;
+    }
+
+    @Override
+    public void setArmAngle(Arm arm, MatrixStack matrices) {
+        this.getArm(arm).rotate(matrices);
+    }
+
+    protected ModelPart getArm(Arm arm) {
+        if (arm == Arm.LEFT) {
+            return this.leftArm;
+        }
+        return this.rightArm;
+    }
+
+    @Override
+    public ModelPart getHead() {
+        return this.head;
+    }
+
+    protected Arm getPreferredArm(T entity) {
+        Arm arm = ((LivingEntity)entity).getMainArm();
+        return ((LivingEntity)entity).preferredHand == Hand.MAIN_HAND ? arm : arm.getOpposite();
+    }
+
+    public static enum ArmPose {
+        EMPTY(false),
+        ITEM(false),
+        BLOCK(false),
+        BOW_AND_ARROW(true),
+        THROW_SPEAR(false),
+        CROSSBOW_CHARGE(true),
+        CROSSBOW_HOLD(true);
+
+        private final boolean field_25722;
+
+        private ArmPose(boolean bl) {
+            this.field_25722 = bl;
+        }
+
+        public boolean method_30156() {
+            return this.field_25722;
+        }
+    }
+}
+

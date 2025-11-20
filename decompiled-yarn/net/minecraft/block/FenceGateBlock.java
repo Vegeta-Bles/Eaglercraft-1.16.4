@@ -1,0 +1,163 @@
+package net.minecraft.block;
+
+import net.minecraft.entity.ai.pathing.NavigationType;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.tag.BlockTags;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldAccess;
+
+public class FenceGateBlock extends HorizontalFacingBlock {
+   public static final BooleanProperty OPEN = Properties.OPEN;
+   public static final BooleanProperty POWERED = Properties.POWERED;
+   public static final BooleanProperty IN_WALL = Properties.IN_WALL;
+   protected static final VoxelShape Z_AXIS_SHAPE = Block.createCuboidShape(0.0, 0.0, 6.0, 16.0, 16.0, 10.0);
+   protected static final VoxelShape X_AXIS_SHAPE = Block.createCuboidShape(6.0, 0.0, 0.0, 10.0, 16.0, 16.0);
+   protected static final VoxelShape IN_WALL_Z_AXIS_SHAPE = Block.createCuboidShape(0.0, 0.0, 6.0, 16.0, 13.0, 10.0);
+   protected static final VoxelShape IN_WALL_X_AXIS_SHAPE = Block.createCuboidShape(6.0, 0.0, 0.0, 10.0, 13.0, 16.0);
+   protected static final VoxelShape Z_AXIS_COLLISION_SHAPE = Block.createCuboidShape(0.0, 0.0, 6.0, 16.0, 24.0, 10.0);
+   protected static final VoxelShape X_AXIS_COLLISION_SHAPE = Block.createCuboidShape(6.0, 0.0, 0.0, 10.0, 24.0, 16.0);
+   protected static final VoxelShape Z_AXIS_CULL_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(0.0, 5.0, 7.0, 2.0, 16.0, 9.0), Block.createCuboidShape(14.0, 5.0, 7.0, 16.0, 16.0, 9.0)
+   );
+   protected static final VoxelShape X_AXIS_CULL_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(7.0, 5.0, 0.0, 9.0, 16.0, 2.0), Block.createCuboidShape(7.0, 5.0, 14.0, 9.0, 16.0, 16.0)
+   );
+   protected static final VoxelShape IN_WALL_Z_AXIS_CULL_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(0.0, 2.0, 7.0, 2.0, 13.0, 9.0), Block.createCuboidShape(14.0, 2.0, 7.0, 16.0, 13.0, 9.0)
+   );
+   protected static final VoxelShape IN_WALL_X_AXIS_CULL_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(7.0, 2.0, 0.0, 9.0, 13.0, 2.0), Block.createCuboidShape(7.0, 2.0, 14.0, 9.0, 13.0, 16.0)
+   );
+
+   public FenceGateBlock(AbstractBlock.Settings _snowman) {
+      super(_snowman);
+      this.setDefaultState(
+         this.stateManager.getDefaultState().with(OPEN, Boolean.valueOf(false)).with(POWERED, Boolean.valueOf(false)).with(IN_WALL, Boolean.valueOf(false))
+      );
+   }
+
+   @Override
+   public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+      if (state.get(IN_WALL)) {
+         return state.get(FACING).getAxis() == Direction.Axis.X ? IN_WALL_X_AXIS_SHAPE : IN_WALL_Z_AXIS_SHAPE;
+      } else {
+         return state.get(FACING).getAxis() == Direction.Axis.X ? X_AXIS_SHAPE : Z_AXIS_SHAPE;
+      }
+   }
+
+   @Override
+   public BlockState getStateForNeighborUpdate(BlockState state, Direction direction, BlockState newState, WorldAccess world, BlockPos pos, BlockPos posFrom) {
+      Direction.Axis _snowman = direction.getAxis();
+      if (state.get(FACING).rotateYClockwise().getAxis() != _snowman) {
+         return super.getStateForNeighborUpdate(state, direction, newState, world, pos, posFrom);
+      } else {
+         boolean _snowmanx = this.isWall(newState) || this.isWall(world.getBlockState(pos.offset(direction.getOpposite())));
+         return state.with(IN_WALL, Boolean.valueOf(_snowmanx));
+      }
+   }
+
+   @Override
+   public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+      if (state.get(OPEN)) {
+         return VoxelShapes.empty();
+      } else {
+         return state.get(FACING).getAxis() == Direction.Axis.Z ? Z_AXIS_COLLISION_SHAPE : X_AXIS_COLLISION_SHAPE;
+      }
+   }
+
+   @Override
+   public VoxelShape getCullingShape(BlockState state, BlockView world, BlockPos pos) {
+      if (state.get(IN_WALL)) {
+         return state.get(FACING).getAxis() == Direction.Axis.X ? IN_WALL_X_AXIS_CULL_SHAPE : IN_WALL_Z_AXIS_CULL_SHAPE;
+      } else {
+         return state.get(FACING).getAxis() == Direction.Axis.X ? X_AXIS_CULL_SHAPE : Z_AXIS_CULL_SHAPE;
+      }
+   }
+
+   @Override
+   public boolean canPathfindThrough(BlockState state, BlockView world, BlockPos pos, NavigationType type) {
+      switch (type) {
+         case LAND:
+            return state.get(OPEN);
+         case WATER:
+            return false;
+         case AIR:
+            return state.get(OPEN);
+         default:
+            return false;
+      }
+   }
+
+   @Override
+   public BlockState getPlacementState(ItemPlacementContext ctx) {
+      World _snowman = ctx.getWorld();
+      BlockPos _snowmanx = ctx.getBlockPos();
+      boolean _snowmanxx = _snowman.isReceivingRedstonePower(_snowmanx);
+      Direction _snowmanxxx = ctx.getPlayerFacing();
+      Direction.Axis _snowmanxxxx = _snowmanxxx.getAxis();
+      boolean _snowmanxxxxx = _snowmanxxxx == Direction.Axis.Z && (this.isWall(_snowman.getBlockState(_snowmanx.west())) || this.isWall(_snowman.getBlockState(_snowmanx.east())))
+         || _snowmanxxxx == Direction.Axis.X && (this.isWall(_snowman.getBlockState(_snowmanx.north())) || this.isWall(_snowman.getBlockState(_snowmanx.south())));
+      return this.getDefaultState()
+         .with(FACING, _snowmanxxx)
+         .with(OPEN, Boolean.valueOf(_snowmanxx))
+         .with(POWERED, Boolean.valueOf(_snowmanxx))
+         .with(IN_WALL, Boolean.valueOf(_snowmanxxxxx));
+   }
+
+   private boolean isWall(BlockState state) {
+      return state.getBlock().isIn(BlockTags.WALLS);
+   }
+
+   @Override
+   public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, Hand hand, BlockHitResult hit) {
+      if (state.get(OPEN)) {
+         state = state.with(OPEN, Boolean.valueOf(false));
+         world.setBlockState(pos, state, 10);
+      } else {
+         Direction _snowman = player.getHorizontalFacing();
+         if (state.get(FACING) == _snowman.getOpposite()) {
+            state = state.with(FACING, _snowman);
+         }
+
+         state = state.with(OPEN, Boolean.valueOf(true));
+         world.setBlockState(pos, state, 10);
+      }
+
+      world.syncWorldEvent(player, state.get(OPEN) ? 1008 : 1014, pos, 0);
+      return ActionResult.success(world.isClient);
+   }
+
+   @Override
+   public void neighborUpdate(BlockState state, World world, BlockPos pos, Block block, BlockPos fromPos, boolean notify) {
+      if (!world.isClient) {
+         boolean _snowman = world.isReceivingRedstonePower(pos);
+         if (state.get(POWERED) != _snowman) {
+            world.setBlockState(pos, state.with(POWERED, Boolean.valueOf(_snowman)).with(OPEN, Boolean.valueOf(_snowman)), 2);
+            if (state.get(OPEN) != _snowman) {
+               world.syncWorldEvent(null, _snowman ? 1008 : 1014, pos, 0);
+            }
+         }
+      }
+   }
+
+   @Override
+   protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+      builder.add(FACING, OPEN, POWERED, IN_WALL);
+   }
+
+   public static boolean canWallConnect(BlockState state, Direction side) {
+      return state.get(FACING).getAxis() == side.rotateYClockwise().getAxis();
+   }
+}

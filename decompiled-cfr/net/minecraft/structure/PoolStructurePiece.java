@@ -1,0 +1,130 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.Lists
+ *  com.mojang.serialization.Dynamic
+ *  com.mojang.serialization.DynamicOps
+ *  org.apache.logging.log4j.LogManager
+ *  org.apache.logging.log4j.Logger
+ */
+package net.minecraft.structure;
+
+import com.google.common.collect.Lists;
+import com.mojang.serialization.Dynamic;
+import com.mojang.serialization.DynamicOps;
+import java.util.List;
+import java.util.Random;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
+import net.minecraft.structure.JigsawJunction;
+import net.minecraft.structure.StructureManager;
+import net.minecraft.structure.StructurePiece;
+import net.minecraft.structure.StructurePieceType;
+import net.minecraft.structure.pool.EmptyPoolElement;
+import net.minecraft.structure.pool.StructurePoolElement;
+import net.minecraft.util.BlockRotation;
+import net.minecraft.util.math.BlockBox;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.StructureWorldAccess;
+import net.minecraft.world.gen.StructureAccessor;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class PoolStructurePiece
+extends StructurePiece {
+    private static final Logger field_24991 = LogManager.getLogger();
+    protected final StructurePoolElement poolElement;
+    protected BlockPos pos;
+    private final int groundLevelDelta;
+    protected final BlockRotation rotation;
+    private final List<JigsawJunction> junctions = Lists.newArrayList();
+    private final StructureManager structureManager;
+
+    public PoolStructurePiece(StructureManager structureManager, StructurePoolElement structurePoolElement, BlockPos blockPos, int n, BlockRotation blockRotation, BlockBox blockBox) {
+        super(StructurePieceType.JIGSAW, 0);
+        this.structureManager = structureManager;
+        this.poolElement = structurePoolElement;
+        this.pos = blockPos;
+        this.groundLevelDelta = n;
+        this.rotation = blockRotation;
+        this.boundingBox = blockBox;
+    }
+
+    public PoolStructurePiece(StructureManager manager, CompoundTag tag2) {
+        super(StructurePieceType.JIGSAW, tag2);
+        this.structureManager = manager;
+        this.pos = new BlockPos(tag2.getInt("PosX"), tag2.getInt("PosY"), tag2.getInt("PosZ"));
+        this.groundLevelDelta = tag2.getInt("ground_level_delta");
+        this.poolElement = StructurePoolElement.CODEC.parse((DynamicOps)NbtOps.INSTANCE, (Object)tag2.getCompound("pool_element")).resultOrPartial(arg_0 -> ((Logger)field_24991).error(arg_0)).orElse(EmptyPoolElement.INSTANCE);
+        this.rotation = BlockRotation.valueOf(tag2.getString("rotation"));
+        this.boundingBox = this.poolElement.getBoundingBox(manager, this.pos, this.rotation);
+        ListTag listTag = tag2.getList("junctions", 10);
+        this.junctions.clear();
+        listTag.forEach(tag -> this.junctions.add(JigsawJunction.method_28873(new Dynamic((DynamicOps)NbtOps.INSTANCE, tag))));
+    }
+
+    @Override
+    protected void toNbt(CompoundTag tag2) {
+        tag2.putInt("PosX", this.pos.getX());
+        tag2.putInt("PosY", this.pos.getY());
+        tag2.putInt("PosZ", this.pos.getZ());
+        tag2.putInt("ground_level_delta", this.groundLevelDelta);
+        StructurePoolElement.CODEC.encodeStart((DynamicOps)NbtOps.INSTANCE, (Object)this.poolElement).resultOrPartial(arg_0 -> ((Logger)field_24991).error(arg_0)).ifPresent(tag -> tag2.put("pool_element", (Tag)tag));
+        tag2.putString("rotation", this.rotation.name());
+        ListTag listTag = new ListTag();
+        for (JigsawJunction jigsawJunction : this.junctions) {
+            listTag.add(jigsawJunction.serialize(NbtOps.INSTANCE).getValue());
+        }
+        tag2.put("junctions", listTag);
+    }
+
+    @Override
+    public boolean generate(StructureWorldAccess structureWorldAccess, StructureAccessor structureAccessor, ChunkGenerator chunkGenerator, Random random, BlockBox boundingBox, ChunkPos chunkPos, BlockPos blockPos) {
+        return this.method_27236(structureWorldAccess, structureAccessor, chunkGenerator, random, boundingBox, blockPos, false);
+    }
+
+    public boolean method_27236(StructureWorldAccess structureWorldAccess, StructureAccessor structureAccessor, ChunkGenerator chunkGenerator, Random random, BlockBox blockBox, BlockPos blockPos, boolean keepJigsaws) {
+        return this.poolElement.generate(this.structureManager, structureWorldAccess, structureAccessor, chunkGenerator, this.pos, blockPos, this.rotation, blockBox, random, keepJigsaws);
+    }
+
+    @Override
+    public void translate(int x, int y, int z) {
+        super.translate(x, y, z);
+        this.pos = this.pos.add(x, y, z);
+    }
+
+    @Override
+    public BlockRotation getRotation() {
+        return this.rotation;
+    }
+
+    public String toString() {
+        return String.format("<%s | %s | %s | %s>", new Object[]{this.getClass().getSimpleName(), this.pos, this.rotation, this.poolElement});
+    }
+
+    public StructurePoolElement getPoolElement() {
+        return this.poolElement;
+    }
+
+    public BlockPos getPos() {
+        return this.pos;
+    }
+
+    public int getGroundLevelDelta() {
+        return this.groundLevelDelta;
+    }
+
+    public void addJunction(JigsawJunction junction) {
+        this.junctions.add(junction);
+    }
+
+    public List<JigsawJunction> getJunctions() {
+        return this.junctions;
+    }
+}
+

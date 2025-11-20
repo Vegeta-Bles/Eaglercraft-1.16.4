@@ -1,0 +1,78 @@
+package net.minecraft.world.biome.layer;
+
+import net.minecraft.world.biome.layer.type.ParentedLayer;
+import net.minecraft.world.biome.layer.util.LayerSampleContext;
+import net.minecraft.world.biome.layer.util.LayerSampler;
+
+public enum ScaleLayer implements ParentedLayer {
+   NORMAL,
+   FUZZY {
+      @Override
+      protected int sample(LayerSampleContext<?> context, int i, int j, int k, int l) {
+         return context.choose(i, j, k, l);
+      }
+   };
+
+   private ScaleLayer() {
+   }
+
+   @Override
+   public int transformX(int x) {
+      return x >> 1;
+   }
+
+   @Override
+   public int transformZ(int y) {
+      return y >> 1;
+   }
+
+   @Override
+   public int sample(LayerSampleContext<?> context, LayerSampler parent, int x, int z) {
+      int k = parent.sample(this.transformX(x), this.transformZ(z));
+      context.initSeed((long)(x >> 1 << 1), (long)(z >> 1 << 1));
+      int l = x & 1;
+      int m = z & 1;
+      if (l == 0 && m == 0) {
+         return k;
+      } else {
+         int n = parent.sample(this.transformX(x), this.transformZ(z + 1));
+         int o = context.choose(k, n);
+         if (l == 0 && m == 1) {
+            return o;
+         } else {
+            int p = parent.sample(this.transformX(x + 1), this.transformZ(z));
+            int q = context.choose(k, p);
+            if (l == 1 && m == 0) {
+               return q;
+            } else {
+               int r = parent.sample(this.transformX(x + 1), this.transformZ(z + 1));
+               return this.sample(context, k, p, n, r);
+            }
+         }
+      }
+   }
+
+   protected int sample(LayerSampleContext<?> context, int i, int j, int k, int l) {
+      if (j == k && k == l) {
+         return j;
+      } else if (i == j && i == k) {
+         return i;
+      } else if (i == j && i == l) {
+         return i;
+      } else if (i == k && i == l) {
+         return i;
+      } else if (i == j && k != l) {
+         return i;
+      } else if (i == k && j != l) {
+         return i;
+      } else if (i == l && j != k) {
+         return i;
+      } else if (j == k && i != l) {
+         return j;
+      } else if (j == l && i != k) {
+         return j;
+      } else {
+         return k == l && i != j ? k : context.choose(i, j, k, l);
+      }
+   }
+}

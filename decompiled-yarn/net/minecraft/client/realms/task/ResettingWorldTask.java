@@ -1,0 +1,82 @@
+package net.minecraft.client.realms.task;
+
+import javax.annotation.Nullable;
+import net.minecraft.client.realms.RealmsClient;
+import net.minecraft.client.realms.dto.WorldTemplate;
+import net.minecraft.client.realms.exception.RetryCallException;
+import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
+
+public class ResettingWorldTask extends LongRunningTask {
+   private final String seed;
+   private final WorldTemplate worldTemplate;
+   private final int levelType;
+   private final boolean generateStructures;
+   private final long serverId;
+   private Text title = new TranslatableText("mco.reset.world.resetting.screen.title");
+   private final Runnable callback;
+
+   public ResettingWorldTask(
+      @Nullable String seed,
+      @Nullable WorldTemplate worldTemplate,
+      int levelType,
+      boolean generateStructures,
+      long serverId,
+      @Nullable Text _snowman,
+      Runnable callback
+   ) {
+      this.seed = seed;
+      this.worldTemplate = worldTemplate;
+      this.levelType = levelType;
+      this.generateStructures = generateStructures;
+      this.serverId = serverId;
+      if (_snowman != null) {
+         this.title = _snowman;
+      }
+
+      this.callback = callback;
+   }
+
+   @Override
+   public void run() {
+      RealmsClient _snowman = RealmsClient.createRealmsClient();
+      this.setTitle(this.title);
+      int _snowmanx = 0;
+
+      while (_snowmanx < 25) {
+         try {
+            if (this.aborted()) {
+               return;
+            }
+
+            if (this.worldTemplate != null) {
+               _snowman.resetWorldWithTemplate(this.serverId, this.worldTemplate.id);
+            } else {
+               _snowman.resetWorldWithSeed(this.serverId, this.seed, this.levelType, this.generateStructures);
+            }
+
+            if (this.aborted()) {
+               return;
+            }
+
+            this.callback.run();
+            return;
+         } catch (RetryCallException var4) {
+            if (this.aborted()) {
+               return;
+            }
+
+            pause(var4.delaySeconds);
+            _snowmanx++;
+         } catch (Exception var5) {
+            if (this.aborted()) {
+               return;
+            }
+
+            LOGGER.error("Couldn't reset world");
+            this.error(var5.toString());
+            return;
+         }
+      }
+   }
+}

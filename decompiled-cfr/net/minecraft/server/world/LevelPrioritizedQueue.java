@@ -1,0 +1,116 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.annotations.VisibleForTesting
+ *  com.google.common.collect.Lists
+ *  com.mojang.datafixers.util.Either
+ *  it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap
+ *  it.unimi.dsi.fastutil.longs.LongCollection
+ *  it.unimi.dsi.fastutil.longs.LongOpenHashSet
+ *  it.unimi.dsi.fastutil.longs.LongSet
+ *  javax.annotation.Nullable
+ */
+package net.minecraft.server.world;
+
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Lists;
+import com.mojang.datafixers.util.Either;
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongCollection;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
+import net.minecraft.server.world.ThreadedAnvilChunkStorage;
+import net.minecraft.util.math.ChunkPos;
+
+public class LevelPrioritizedQueue<T> {
+    public static final int LEVEL_COUNT = ThreadedAnvilChunkStorage.MAX_LEVEL + 2;
+    private final List<Long2ObjectLinkedOpenHashMap<List<Optional<T>>>> levelToPosToElements = IntStream.range(0, LEVEL_COUNT).mapToObj(n -> new Long2ObjectLinkedOpenHashMap()).collect(Collectors.toList());
+    private volatile int firstNonEmptyLevel = LEVEL_COUNT;
+    private final String name;
+    private final LongSet blockingChunks = new LongOpenHashSet();
+    private final int maxBlocking;
+
+    public LevelPrioritizedQueue(String name, int maxSize) {
+        this.name = name;
+        this.maxBlocking = maxSize;
+    }
+
+    protected void updateLevel(int fromLevel, ChunkPos pos, int toLevel) {
+        if (fromLevel >= LEVEL_COUNT) {
+            return;
+        }
+        Long2ObjectLinkedOpenHashMap<List<Optional<T>>> long2ObjectLinkedOpenHashMap = this.levelToPosToElements.get(fromLevel);
+        List _snowman2 = (List)long2ObjectLinkedOpenHashMap.remove(pos.toLong());
+        if (fromLevel == this.firstNonEmptyLevel) {
+            while (this.firstNonEmptyLevel < LEVEL_COUNT && this.levelToPosToElements.get(this.firstNonEmptyLevel).isEmpty()) {
+                ++this.firstNonEmptyLevel;
+            }
+        }
+        if (_snowman2 != null && !_snowman2.isEmpty()) {
+            ((List)this.levelToPosToElements.get(toLevel).computeIfAbsent(pos.toLong(), l -> Lists.newArrayList())).addAll(_snowman2);
+            this.firstNonEmptyLevel = Math.min(this.firstNonEmptyLevel, toLevel);
+        }
+    }
+
+    protected void add(Optional<T> element, long pos, int level) {
+        ((List)this.levelToPosToElements.get(level).computeIfAbsent(pos, l -> Lists.newArrayList())).add(element);
+        this.firstNonEmptyLevel = Math.min(this.firstNonEmptyLevel, level);
+    }
+
+    protected void remove(long pos, boolean removeElement) {
+        for (Long2ObjectLinkedOpenHashMap<List<Optional<T>>> long2ObjectLinkedOpenHashMap : this.levelToPosToElements) {
+            List list = (List)long2ObjectLinkedOpenHashMap.get(pos);
+            if (list == null) continue;
+            if (removeElement) {
+                list.clear();
+            } else {
+                list.removeIf(optional -> !optional.isPresent());
+            }
+            if (!list.isEmpty()) continue;
+            long2ObjectLinkedOpenHashMap.remove(pos);
+        }
+        while (this.firstNonEmptyLevel < LEVEL_COUNT && this.levelToPosToElements.get(this.firstNonEmptyLevel).isEmpty()) {
+            ++this.firstNonEmptyLevel;
+        }
+        this.blockingChunks.remove(pos);
+    }
+
+    private Runnable createBlockingAdder(long pos) {
+        return () -> this.blockingChunks.add(pos);
+    }
+
+    @Nullable
+    public Stream<Either<T, Runnable>> poll() {
+        if (this.blockingChunks.size() >= this.maxBlocking) {
+            return null;
+        }
+        if (this.firstNonEmptyLevel < LEVEL_COUNT) {
+            int n = this.firstNonEmptyLevel;
+            Long2ObjectLinkedOpenHashMap<List<Optional<T>>> _snowman2 = this.levelToPosToElements.get(n);
+            long _snowman3 = _snowman2.firstLongKey();
+            List _snowman4 = (List)_snowman2.removeFirst();
+            while (this.firstNonEmptyLevel < LEVEL_COUNT && this.levelToPosToElements.get(this.firstNonEmptyLevel).isEmpty()) {
+                ++this.firstNonEmptyLevel;
+            }
+            return _snowman4.stream().map(optional -> optional.map(Either::left).orElseGet(() -> Either.right((Object)this.createBlockingAdder(_snowman3))));
+        }
+        return null;
+    }
+
+    public String toString() {
+        return this.name + " " + this.firstNonEmptyLevel + "...";
+    }
+
+    @VisibleForTesting
+    LongSet getBlockingChunks() {
+        return new LongOpenHashSet((LongCollection)this.blockingChunks);
+    }
+}
+

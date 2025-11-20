@@ -1,0 +1,289 @@
+package net.minecraft.entity.mob;
+
+import com.google.common.collect.Maps;
+import java.util.Map;
+import javax.annotation.Nullable;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.EnchantmentHelper;
+import net.minecraft.enchantment.Enchantments;
+import net.minecraft.entity.CrossbowUser;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityData;
+import net.minecraft.entity.EntityGroup;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.ai.goal.CrossbowAttackGoal;
+import net.minecraft.entity.ai.goal.FollowTargetGoal;
+import net.minecraft.entity.ai.goal.LookAtEntityGoal;
+import net.minecraft.entity.ai.goal.RevengeGoal;
+import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.ai.goal.WanderAroundGoal;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.passive.IronGolemEntity;
+import net.minecraft.entity.passive.MerchantEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.projectile.ProjectileEntity;
+import net.minecraft.entity.raid.RaiderEntity;
+import net.minecraft.inventory.SimpleInventory;
+import net.minecraft.item.BannerItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.item.RangedWeaponItem;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.village.raid.Raid;
+import net.minecraft.world.Difficulty;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldView;
+
+public class PillagerEntity extends IllagerEntity implements CrossbowUser {
+   private static final TrackedData<Boolean> CHARGING = DataTracker.registerData(PillagerEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+   private final SimpleInventory inventory = new SimpleInventory(5);
+
+   public PillagerEntity(EntityType<? extends PillagerEntity> _snowman, World _snowman) {
+      super(_snowman, _snowman);
+   }
+
+   @Override
+   protected void initGoals() {
+      super.initGoals();
+      this.goalSelector.add(0, new SwimGoal(this));
+      this.goalSelector.add(2, new RaiderEntity.PatrolApproachGoal(this, 10.0F));
+      this.goalSelector.add(3, new CrossbowAttackGoal<>(this, 1.0, 8.0F));
+      this.goalSelector.add(8, new WanderAroundGoal(this, 0.6));
+      this.goalSelector.add(9, new LookAtEntityGoal(this, PlayerEntity.class, 15.0F, 1.0F));
+      this.goalSelector.add(10, new LookAtEntityGoal(this, MobEntity.class, 15.0F));
+      this.targetSelector.add(1, new RevengeGoal(this, RaiderEntity.class).setGroupRevenge());
+      this.targetSelector.add(2, new FollowTargetGoal<>(this, PlayerEntity.class, true));
+      this.targetSelector.add(3, new FollowTargetGoal<>(this, MerchantEntity.class, false));
+      this.targetSelector.add(3, new FollowTargetGoal<>(this, IronGolemEntity.class, true));
+   }
+
+   public static DefaultAttributeContainer.Builder createPillagerAttributes() {
+      return HostileEntity.createHostileAttributes()
+         .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.35F)
+         .add(EntityAttributes.GENERIC_MAX_HEALTH, 24.0)
+         .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 5.0)
+         .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 32.0);
+   }
+
+   @Override
+   protected void initDataTracker() {
+      super.initDataTracker();
+      this.dataTracker.startTracking(CHARGING, false);
+   }
+
+   @Override
+   public boolean canUseRangedWeapon(RangedWeaponItem weapon) {
+      return weapon == Items.CROSSBOW;
+   }
+
+   public boolean isCharging() {
+      return this.dataTracker.get(CHARGING);
+   }
+
+   @Override
+   public void setCharging(boolean charging) {
+      this.dataTracker.set(CHARGING, charging);
+   }
+
+   @Override
+   public void postShoot() {
+      this.despawnCounter = 0;
+   }
+
+   @Override
+   public void writeCustomDataToTag(CompoundTag tag) {
+      super.writeCustomDataToTag(tag);
+      ListTag _snowman = new ListTag();
+
+      for (int _snowmanx = 0; _snowmanx < this.inventory.size(); _snowmanx++) {
+         ItemStack _snowmanxx = this.inventory.getStack(_snowmanx);
+         if (!_snowmanxx.isEmpty()) {
+            _snowman.add(_snowmanxx.toTag(new CompoundTag()));
+         }
+      }
+
+      tag.put("Inventory", _snowman);
+   }
+
+   @Override
+   public IllagerEntity.State getState() {
+      if (this.isCharging()) {
+         return IllagerEntity.State.CROSSBOW_CHARGE;
+      } else if (this.isHolding(Items.CROSSBOW)) {
+         return IllagerEntity.State.CROSSBOW_HOLD;
+      } else {
+         return this.isAttacking() ? IllagerEntity.State.ATTACKING : IllagerEntity.State.NEUTRAL;
+      }
+   }
+
+   @Override
+   public void readCustomDataFromTag(CompoundTag tag) {
+      super.readCustomDataFromTag(tag);
+      ListTag _snowman = tag.getList("Inventory", 10);
+
+      for (int _snowmanx = 0; _snowmanx < _snowman.size(); _snowmanx++) {
+         ItemStack _snowmanxx = ItemStack.fromTag(_snowman.getCompound(_snowmanx));
+         if (!_snowmanxx.isEmpty()) {
+            this.inventory.addStack(_snowmanxx);
+         }
+      }
+
+      this.setCanPickUpLoot(true);
+   }
+
+   @Override
+   public float getPathfindingFavor(BlockPos pos, WorldView world) {
+      BlockState _snowman = world.getBlockState(pos.down());
+      return !_snowman.isOf(Blocks.GRASS_BLOCK) && !_snowman.isOf(Blocks.SAND) ? 0.5F - world.getBrightness(pos) : 10.0F;
+   }
+
+   @Override
+   public int getLimitPerChunk() {
+      return 1;
+   }
+
+   @Nullable
+   @Override
+   public EntityData initialize(
+      ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag
+   ) {
+      this.initEquipment(difficulty);
+      this.updateEnchantments(difficulty);
+      return super.initialize(world, difficulty, spawnReason, entityData, entityTag);
+   }
+
+   @Override
+   protected void initEquipment(LocalDifficulty difficulty) {
+      this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
+   }
+
+   @Override
+   protected void method_30759(float _snowman) {
+      super.method_30759(_snowman);
+      if (this.random.nextInt(300) == 0) {
+         ItemStack _snowmanx = this.getMainHandStack();
+         if (_snowmanx.getItem() == Items.CROSSBOW) {
+            Map<Enchantment, Integer> _snowmanxx = EnchantmentHelper.get(_snowmanx);
+            _snowmanxx.putIfAbsent(Enchantments.PIERCING, 1);
+            EnchantmentHelper.set(_snowmanxx, _snowmanx);
+            this.equipStack(EquipmentSlot.MAINHAND, _snowmanx);
+         }
+      }
+   }
+
+   @Override
+   public boolean isTeammate(Entity other) {
+      if (super.isTeammate(other)) {
+         return true;
+      } else {
+         return other instanceof LivingEntity && ((LivingEntity)other).getGroup() == EntityGroup.ILLAGER
+            ? this.getScoreboardTeam() == null && other.getScoreboardTeam() == null
+            : false;
+      }
+   }
+
+   @Override
+   protected SoundEvent getAmbientSound() {
+      return SoundEvents.ENTITY_PILLAGER_AMBIENT;
+   }
+
+   @Override
+   protected SoundEvent getDeathSound() {
+      return SoundEvents.ENTITY_PILLAGER_DEATH;
+   }
+
+   @Override
+   protected SoundEvent getHurtSound(DamageSource source) {
+      return SoundEvents.ENTITY_PILLAGER_HURT;
+   }
+
+   @Override
+   public void attack(LivingEntity target, float pullProgress) {
+      this.shoot(this, 1.6F);
+   }
+
+   @Override
+   public void shoot(LivingEntity target, ItemStack crossbow, ProjectileEntity projectile, float multiShotSpray) {
+      this.shoot(this, target, projectile, multiShotSpray, 1.6F);
+   }
+
+   @Override
+   protected void loot(ItemEntity item) {
+      ItemStack _snowman = item.getStack();
+      if (_snowman.getItem() instanceof BannerItem) {
+         super.loot(item);
+      } else {
+         Item _snowmanx = _snowman.getItem();
+         if (this.method_7111(_snowmanx)) {
+            this.method_29499(item);
+            ItemStack _snowmanxx = this.inventory.addStack(_snowman);
+            if (_snowmanxx.isEmpty()) {
+               item.remove();
+            } else {
+               _snowman.setCount(_snowmanxx.getCount());
+            }
+         }
+      }
+   }
+
+   private boolean method_7111(Item _snowman) {
+      return this.hasActiveRaid() && _snowman == Items.WHITE_BANNER;
+   }
+
+   @Override
+   public boolean equip(int slot, ItemStack item) {
+      if (super.equip(slot, item)) {
+         return true;
+      } else {
+         int _snowman = slot - 300;
+         if (_snowman >= 0 && _snowman < this.inventory.size()) {
+            this.inventory.setStack(_snowman, item);
+            return true;
+         } else {
+            return false;
+         }
+      }
+   }
+
+   @Override
+   public void addBonusForWave(int wave, boolean unused) {
+      Raid _snowman = this.getRaid();
+      boolean _snowmanx = this.random.nextFloat() <= _snowman.getEnchantmentChance();
+      if (_snowmanx) {
+         ItemStack _snowmanxx = new ItemStack(Items.CROSSBOW);
+         Map<Enchantment, Integer> _snowmanxxx = Maps.newHashMap();
+         if (wave > _snowman.getMaxWaves(Difficulty.NORMAL)) {
+            _snowmanxxx.put(Enchantments.QUICK_CHARGE, 2);
+         } else if (wave > _snowman.getMaxWaves(Difficulty.EASY)) {
+            _snowmanxxx.put(Enchantments.QUICK_CHARGE, 1);
+         }
+
+         _snowmanxxx.put(Enchantments.MULTISHOT, 1);
+         EnchantmentHelper.set(_snowmanxxx, _snowmanxx);
+         this.equipStack(EquipmentSlot.MAINHAND, _snowmanxx);
+      }
+   }
+
+   @Override
+   public SoundEvent getCelebratingSound() {
+      return SoundEvents.ENTITY_PILLAGER_CELEBRATE;
+   }
+}

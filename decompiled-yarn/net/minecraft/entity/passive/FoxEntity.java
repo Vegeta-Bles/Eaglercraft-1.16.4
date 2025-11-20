@@ -1,0 +1,1485 @@
+package net.minecraft.entity.passive;
+
+import com.google.common.collect.Lists;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import javax.annotation.Nullable;
+import net.minecraft.advancement.criterion.Criteria;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.SweetBerryBushBlock;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityData;
+import net.minecraft.entity.EntityDimensions;
+import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
+import net.minecraft.entity.ExperienceOrbEntity;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.ai.TargetPredicate;
+import net.minecraft.entity.ai.control.LookControl;
+import net.minecraft.entity.ai.control.MoveControl;
+import net.minecraft.entity.ai.goal.AnimalMateGoal;
+import net.minecraft.entity.ai.goal.DiveJumpingGoal;
+import net.minecraft.entity.ai.goal.EscapeDangerGoal;
+import net.minecraft.entity.ai.goal.EscapeSunlightGoal;
+import net.minecraft.entity.ai.goal.FleeEntityGoal;
+import net.minecraft.entity.ai.goal.FollowTargetGoal;
+import net.minecraft.entity.ai.goal.Goal;
+import net.minecraft.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.entity.ai.goal.MoveToTargetPosGoal;
+import net.minecraft.entity.ai.goal.PounceAtTargetGoal;
+import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.ai.goal.WanderAroundFarGoal;
+import net.minecraft.entity.ai.pathing.PathNodeType;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.mob.HostileEntity;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtHelper;
+import net.minecraft.particle.ItemStackParticleEffect;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.predicate.entity.EntityPredicates;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.stat.Stats;
+import net.minecraft.tag.FluidTags;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.registry.RegistryKey;
+import net.minecraft.world.GameRules;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldView;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.BiomeKeys;
+
+public class FoxEntity extends AnimalEntity {
+   private static final TrackedData<Integer> TYPE = DataTracker.registerData(FoxEntity.class, TrackedDataHandlerRegistry.INTEGER);
+   private static final TrackedData<Byte> FOX_FLAGS = DataTracker.registerData(FoxEntity.class, TrackedDataHandlerRegistry.BYTE);
+   private static final TrackedData<Optional<UUID>> OWNER = DataTracker.registerData(FoxEntity.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+   private static final TrackedData<Optional<UUID>> OTHER_TRUSTED = DataTracker.registerData(FoxEntity.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+   private static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = _snowman -> !_snowman.cannotPickup() && _snowman.isAlive();
+   private static final Predicate<Entity> JUST_ATTACKED_SOMETHING_FILTER = _snowman -> {
+      if (!(_snowman instanceof LivingEntity)) {
+         return false;
+      } else {
+         LivingEntity _snowmanx = (LivingEntity)_snowman;
+         return _snowmanx.getAttacking() != null && _snowmanx.getLastAttackTime() < _snowmanx.age + 600;
+      }
+   };
+   private static final Predicate<Entity> CHICKEN_AND_RABBIT_FILTER = _snowman -> _snowman instanceof ChickenEntity || _snowman instanceof RabbitEntity;
+   private static final Predicate<Entity> NOTICEABLE_PLAYER_FILTER = _snowman -> !_snowman.isSneaky() && EntityPredicates.EXCEPT_CREATIVE_OR_SPECTATOR.test(_snowman);
+   private Goal followChickenAndRabbitGoal;
+   private Goal followBabyTurtleGoal;
+   private Goal followFishGoal;
+   private float headRollProgress;
+   private float lastHeadRollProgress;
+   private float extraRollingHeight;
+   private float lastExtraRollingHeight;
+   private int eatingTime;
+
+   public FoxEntity(EntityType<? extends FoxEntity> _snowman, World _snowman) {
+      super(_snowman, _snowman);
+      this.lookControl = new FoxEntity.FoxLookControl();
+      this.moveControl = new FoxEntity.FoxMoveControl();
+      this.setPathfindingPenalty(PathNodeType.DANGER_OTHER, 0.0F);
+      this.setPathfindingPenalty(PathNodeType.DAMAGE_OTHER, 0.0F);
+      this.setCanPickUpLoot(true);
+   }
+
+   @Override
+   protected void initDataTracker() {
+      super.initDataTracker();
+      this.dataTracker.startTracking(OWNER, Optional.empty());
+      this.dataTracker.startTracking(OTHER_TRUSTED, Optional.empty());
+      this.dataTracker.startTracking(TYPE, 0);
+      this.dataTracker.startTracking(FOX_FLAGS, (byte)0);
+   }
+
+   @Override
+   protected void initGoals() {
+      this.followChickenAndRabbitGoal = new FollowTargetGoal<>(
+         this, AnimalEntity.class, 10, false, false, _snowman -> _snowman instanceof ChickenEntity || _snowman instanceof RabbitEntity
+      );
+      this.followBabyTurtleGoal = new FollowTargetGoal<>(this, TurtleEntity.class, 10, false, false, TurtleEntity.BABY_TURTLE_ON_LAND_FILTER);
+      this.followFishGoal = new FollowTargetGoal<>(this, FishEntity.class, 20, false, false, _snowman -> _snowman instanceof SchoolingFishEntity);
+      this.goalSelector.add(0, new FoxEntity.FoxSwimGoal());
+      this.goalSelector.add(1, new FoxEntity.StopWanderingGoal());
+      this.goalSelector.add(2, new FoxEntity.EscapeWhenNotAggressiveGoal(2.2));
+      this.goalSelector.add(3, new FoxEntity.MateGoal(1.0));
+      this.goalSelector
+         .add(
+            4,
+            new FleeEntityGoal<>(
+               this, PlayerEntity.class, 16.0F, 1.6, 1.4, _snowman -> NOTICEABLE_PLAYER_FILTER.test(_snowman) && !this.canTrust(_snowman.getUuid()) && !this.isAggressive()
+            )
+         );
+      this.goalSelector.add(4, new FleeEntityGoal<>(this, WolfEntity.class, 8.0F, 1.6, 1.4, _snowman -> !((WolfEntity)_snowman).isTamed() && !this.isAggressive()));
+      this.goalSelector.add(4, new FleeEntityGoal<>(this, PolarBearEntity.class, 8.0F, 1.6, 1.4, _snowman -> !this.isAggressive()));
+      this.goalSelector.add(5, new FoxEntity.MoveToHuntGoal());
+      this.goalSelector.add(6, new FoxEntity.JumpChasingGoal());
+      this.goalSelector.add(6, new FoxEntity.AvoidDaylightGoal(1.25));
+      this.goalSelector.add(7, new FoxEntity.AttackGoal(1.2F, true));
+      this.goalSelector.add(7, new FoxEntity.DelayedCalmDownGoal());
+      this.goalSelector.add(8, new FoxEntity.FollowParentGoal(this, 1.25));
+      this.goalSelector.add(9, new FoxEntity.GoToVillageGoal(32, 200));
+      this.goalSelector.add(10, new FoxEntity.EatSweetBerriesGoal(1.2F, 12, 2));
+      this.goalSelector.add(10, new PounceAtTargetGoal(this, 0.4F));
+      this.goalSelector.add(11, new WanderAroundFarGoal(this, 1.0));
+      this.goalSelector.add(11, new FoxEntity.PickupItemGoal());
+      this.goalSelector.add(12, new FoxEntity.LookAtEntityGoal(this, PlayerEntity.class, 24.0F));
+      this.goalSelector.add(13, new FoxEntity.SitDownAndLookAroundGoal());
+      this.targetSelector
+         .add(3, new FoxEntity.DefendFriendGoal(LivingEntity.class, false, false, _snowman -> JUST_ATTACKED_SOMETHING_FILTER.test(_snowman) && !this.canTrust(_snowman.getUuid())));
+   }
+
+   @Override
+   public SoundEvent getEatSound(ItemStack stack) {
+      return SoundEvents.ENTITY_FOX_EAT;
+   }
+
+   @Override
+   public void tickMovement() {
+      if (!this.world.isClient && this.isAlive() && this.canMoveVoluntarily()) {
+         this.eatingTime++;
+         ItemStack _snowman = this.getEquippedStack(EquipmentSlot.MAINHAND);
+         if (this.canEat(_snowman)) {
+            if (this.eatingTime > 600) {
+               ItemStack _snowmanx = _snowman.finishUsing(this.world, this);
+               if (!_snowmanx.isEmpty()) {
+                  this.equipStack(EquipmentSlot.MAINHAND, _snowmanx);
+               }
+
+               this.eatingTime = 0;
+            } else if (this.eatingTime > 560 && this.random.nextFloat() < 0.1F) {
+               this.playSound(this.getEatSound(_snowman), 1.0F, 1.0F);
+               this.world.sendEntityStatus(this, (byte)45);
+            }
+         }
+
+         LivingEntity _snowmanx = this.getTarget();
+         if (_snowmanx == null || !_snowmanx.isAlive()) {
+            this.setCrouching(false);
+            this.setRollingHead(false);
+         }
+      }
+
+      if (this.isSleeping() || this.isImmobile()) {
+         this.jumping = false;
+         this.sidewaysSpeed = 0.0F;
+         this.forwardSpeed = 0.0F;
+      }
+
+      super.tickMovement();
+      if (this.isAggressive() && this.random.nextFloat() < 0.05F) {
+         this.playSound(SoundEvents.ENTITY_FOX_AGGRO, 1.0F, 1.0F);
+      }
+   }
+
+   @Override
+   protected boolean isImmobile() {
+      return this.isDead();
+   }
+
+   private boolean canEat(ItemStack stack) {
+      return stack.getItem().isFood() && this.getTarget() == null && this.onGround && !this.isSleeping();
+   }
+
+   @Override
+   protected void initEquipment(LocalDifficulty difficulty) {
+      if (this.random.nextFloat() < 0.2F) {
+         float _snowman = this.random.nextFloat();
+         ItemStack _snowmanx;
+         if (_snowman < 0.05F) {
+            _snowmanx = new ItemStack(Items.EMERALD);
+         } else if (_snowman < 0.2F) {
+            _snowmanx = new ItemStack(Items.EGG);
+         } else if (_snowman < 0.4F) {
+            _snowmanx = this.random.nextBoolean() ? new ItemStack(Items.RABBIT_FOOT) : new ItemStack(Items.RABBIT_HIDE);
+         } else if (_snowman < 0.6F) {
+            _snowmanx = new ItemStack(Items.WHEAT);
+         } else if (_snowman < 0.8F) {
+            _snowmanx = new ItemStack(Items.LEATHER);
+         } else {
+            _snowmanx = new ItemStack(Items.FEATHER);
+         }
+
+         this.equipStack(EquipmentSlot.MAINHAND, _snowmanx);
+      }
+   }
+
+   @Override
+   public void handleStatus(byte status) {
+      if (status == 45) {
+         ItemStack _snowman = this.getEquippedStack(EquipmentSlot.MAINHAND);
+         if (!_snowman.isEmpty()) {
+            for (int _snowmanx = 0; _snowmanx < 8; _snowmanx++) {
+               Vec3d _snowmanxx = new Vec3d(((double)this.random.nextFloat() - 0.5) * 0.1, Math.random() * 0.1 + 0.1, 0.0)
+                  .rotateX(-this.pitch * (float) (Math.PI / 180.0))
+                  .rotateY(-this.yaw * (float) (Math.PI / 180.0));
+               this.world
+                  .addParticle(
+                     new ItemStackParticleEffect(ParticleTypes.ITEM, _snowman),
+                     this.getX() + this.getRotationVector().x / 2.0,
+                     this.getY(),
+                     this.getZ() + this.getRotationVector().z / 2.0,
+                     _snowmanxx.x,
+                     _snowmanxx.y + 0.05,
+                     _snowmanxx.z
+                  );
+            }
+         }
+      } else {
+         super.handleStatus(status);
+      }
+   }
+
+   public static DefaultAttributeContainer.Builder createFoxAttributes() {
+      return MobEntity.createMobAttributes()
+         .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.3F)
+         .add(EntityAttributes.GENERIC_MAX_HEALTH, 10.0)
+         .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 32.0)
+         .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 2.0);
+   }
+
+   public FoxEntity createChild(ServerWorld _snowman, PassiveEntity _snowman) {
+      FoxEntity _snowmanxx = EntityType.FOX.create(_snowman);
+      _snowmanxx.setType(this.random.nextBoolean() ? this.getFoxType() : ((FoxEntity)_snowman).getFoxType());
+      return _snowmanxx;
+   }
+
+   @Nullable
+   @Override
+   public EntityData initialize(
+      ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag
+   ) {
+      Optional<RegistryKey<Biome>> _snowman = world.method_31081(this.getBlockPos());
+      FoxEntity.Type _snowmanx = FoxEntity.Type.fromBiome(_snowman);
+      boolean _snowmanxx = false;
+      if (entityData instanceof FoxEntity.FoxData) {
+         _snowmanx = ((FoxEntity.FoxData)entityData).type;
+         if (((FoxEntity.FoxData)entityData).getSpawnedCount() >= 2) {
+            _snowmanxx = true;
+         }
+      } else {
+         entityData = new FoxEntity.FoxData(_snowmanx);
+      }
+
+      this.setType(_snowmanx);
+      if (_snowmanxx) {
+         this.setBreedingAge(-24000);
+      }
+
+      if (world instanceof ServerWorld) {
+         this.addTypeSpecificGoals();
+      }
+
+      this.initEquipment(difficulty);
+      return super.initialize(world, difficulty, spawnReason, entityData, entityTag);
+   }
+
+   private void addTypeSpecificGoals() {
+      if (this.getFoxType() == FoxEntity.Type.RED) {
+         this.targetSelector.add(4, this.followChickenAndRabbitGoal);
+         this.targetSelector.add(4, this.followBabyTurtleGoal);
+         this.targetSelector.add(6, this.followFishGoal);
+      } else {
+         this.targetSelector.add(4, this.followFishGoal);
+         this.targetSelector.add(6, this.followChickenAndRabbitGoal);
+         this.targetSelector.add(6, this.followBabyTurtleGoal);
+      }
+   }
+
+   @Override
+   protected void eat(PlayerEntity player, ItemStack stack) {
+      if (this.isBreedingItem(stack)) {
+         this.playSound(this.getEatSound(stack), 1.0F, 1.0F);
+      }
+
+      super.eat(player, stack);
+   }
+
+   @Override
+   protected float getActiveEyeHeight(EntityPose pose, EntityDimensions dimensions) {
+      return this.isBaby() ? dimensions.height * 0.85F : 0.4F;
+   }
+
+   public FoxEntity.Type getFoxType() {
+      return FoxEntity.Type.fromId(this.dataTracker.get(TYPE));
+   }
+
+   private void setType(FoxEntity.Type type) {
+      this.dataTracker.set(TYPE, type.getId());
+   }
+
+   private List<UUID> getTrustedUuids() {
+      List<UUID> _snowman = Lists.newArrayList();
+      _snowman.add(this.dataTracker.get(OWNER).orElse(null));
+      _snowman.add(this.dataTracker.get(OTHER_TRUSTED).orElse(null));
+      return _snowman;
+   }
+
+   private void addTrustedUuid(@Nullable UUID uuid) {
+      if (this.dataTracker.get(OWNER).isPresent()) {
+         this.dataTracker.set(OTHER_TRUSTED, Optional.ofNullable(uuid));
+      } else {
+         this.dataTracker.set(OWNER, Optional.ofNullable(uuid));
+      }
+   }
+
+   @Override
+   public void writeCustomDataToTag(CompoundTag tag) {
+      super.writeCustomDataToTag(tag);
+      List<UUID> _snowman = this.getTrustedUuids();
+      ListTag _snowmanx = new ListTag();
+
+      for (UUID _snowmanxx : _snowman) {
+         if (_snowmanxx != null) {
+            _snowmanx.add(NbtHelper.fromUuid(_snowmanxx));
+         }
+      }
+
+      tag.put("Trusted", _snowmanx);
+      tag.putBoolean("Sleeping", this.isSleeping());
+      tag.putString("Type", this.getFoxType().getKey());
+      tag.putBoolean("Sitting", this.isSitting());
+      tag.putBoolean("Crouching", this.isInSneakingPose());
+   }
+
+   @Override
+   public void readCustomDataFromTag(CompoundTag tag) {
+      super.readCustomDataFromTag(tag);
+      ListTag _snowman = tag.getList("Trusted", 11);
+
+      for (int _snowmanx = 0; _snowmanx < _snowman.size(); _snowmanx++) {
+         this.addTrustedUuid(NbtHelper.toUuid(_snowman.get(_snowmanx)));
+      }
+
+      this.setSleeping(tag.getBoolean("Sleeping"));
+      this.setType(FoxEntity.Type.byName(tag.getString("Type")));
+      this.setSitting(tag.getBoolean("Sitting"));
+      this.setCrouching(tag.getBoolean("Crouching"));
+      if (this.world instanceof ServerWorld) {
+         this.addTypeSpecificGoals();
+      }
+   }
+
+   public boolean isSitting() {
+      return this.getFoxFlag(1);
+   }
+
+   public void setSitting(boolean sitting) {
+      this.setFoxFlag(1, sitting);
+   }
+
+   public boolean isWalking() {
+      return this.getFoxFlag(64);
+   }
+
+   private void setWalking(boolean walking) {
+      this.setFoxFlag(64, walking);
+   }
+
+   private boolean isAggressive() {
+      return this.getFoxFlag(128);
+   }
+
+   private void setAggressive(boolean aggressive) {
+      this.setFoxFlag(128, aggressive);
+   }
+
+   @Override
+   public boolean isSleeping() {
+      return this.getFoxFlag(32);
+   }
+
+   private void setSleeping(boolean sleeping) {
+      this.setFoxFlag(32, sleeping);
+   }
+
+   private void setFoxFlag(int mask, boolean value) {
+      if (value) {
+         this.dataTracker.set(FOX_FLAGS, (byte)(this.dataTracker.get(FOX_FLAGS) | mask));
+      } else {
+         this.dataTracker.set(FOX_FLAGS, (byte)(this.dataTracker.get(FOX_FLAGS) & ~mask));
+      }
+   }
+
+   private boolean getFoxFlag(int bitmask) {
+      return (this.dataTracker.get(FOX_FLAGS) & bitmask) != 0;
+   }
+
+   @Override
+   public boolean canEquip(ItemStack stack) {
+      EquipmentSlot _snowman = MobEntity.getPreferredEquipmentSlot(stack);
+      return !this.getEquippedStack(_snowman).isEmpty() ? false : _snowman == EquipmentSlot.MAINHAND && super.canEquip(stack);
+   }
+
+   @Override
+   public boolean canPickupItem(ItemStack stack) {
+      Item _snowman = stack.getItem();
+      ItemStack _snowmanx = this.getEquippedStack(EquipmentSlot.MAINHAND);
+      return _snowmanx.isEmpty() || this.eatingTime > 0 && _snowman.isFood() && !_snowmanx.getItem().isFood();
+   }
+
+   private void spit(ItemStack stack) {
+      if (!stack.isEmpty() && !this.world.isClient) {
+         ItemEntity _snowman = new ItemEntity(this.world, this.getX() + this.getRotationVector().x, this.getY() + 1.0, this.getZ() + this.getRotationVector().z, stack);
+         _snowman.setPickupDelay(40);
+         _snowman.setThrower(this.getUuid());
+         this.playSound(SoundEvents.ENTITY_FOX_SPIT, 1.0F, 1.0F);
+         this.world.spawnEntity(_snowman);
+      }
+   }
+
+   private void dropItem(ItemStack stack) {
+      ItemEntity _snowman = new ItemEntity(this.world, this.getX(), this.getY(), this.getZ(), stack);
+      this.world.spawnEntity(_snowman);
+   }
+
+   @Override
+   protected void loot(ItemEntity item) {
+      ItemStack _snowman = item.getStack();
+      if (this.canPickupItem(_snowman)) {
+         int _snowmanx = _snowman.getCount();
+         if (_snowmanx > 1) {
+            this.dropItem(_snowman.split(_snowmanx - 1));
+         }
+
+         this.spit(this.getEquippedStack(EquipmentSlot.MAINHAND));
+         this.method_29499(item);
+         this.equipStack(EquipmentSlot.MAINHAND, _snowman.split(1));
+         this.handDropChances[EquipmentSlot.MAINHAND.getEntitySlotId()] = 2.0F;
+         this.sendPickup(item, _snowman.getCount());
+         item.remove();
+         this.eatingTime = 0;
+      }
+   }
+
+   @Override
+   public void tick() {
+      super.tick();
+      if (this.canMoveVoluntarily()) {
+         boolean _snowman = this.isTouchingWater();
+         if (_snowman || this.getTarget() != null || this.world.isThundering()) {
+            this.stopSleeping();
+         }
+
+         if (_snowman || this.isSleeping()) {
+            this.setSitting(false);
+         }
+
+         if (this.isWalking() && this.world.random.nextFloat() < 0.2F) {
+            BlockPos _snowmanx = this.getBlockPos();
+            BlockState _snowmanxx = this.world.getBlockState(_snowmanx);
+            this.world.syncWorldEvent(2001, _snowmanx, Block.getRawIdFromState(_snowmanxx));
+         }
+      }
+
+      this.lastHeadRollProgress = this.headRollProgress;
+      if (this.isRollingHead()) {
+         this.headRollProgress = this.headRollProgress + (1.0F - this.headRollProgress) * 0.4F;
+      } else {
+         this.headRollProgress = this.headRollProgress + (0.0F - this.headRollProgress) * 0.4F;
+      }
+
+      this.lastExtraRollingHeight = this.extraRollingHeight;
+      if (this.isInSneakingPose()) {
+         this.extraRollingHeight += 0.2F;
+         if (this.extraRollingHeight > 3.0F) {
+            this.extraRollingHeight = 3.0F;
+         }
+      } else {
+         this.extraRollingHeight = 0.0F;
+      }
+   }
+
+   @Override
+   public boolean isBreedingItem(ItemStack stack) {
+      return stack.getItem() == Items.SWEET_BERRIES;
+   }
+
+   @Override
+   protected void onPlayerSpawnedChild(PlayerEntity player, MobEntity child) {
+      ((FoxEntity)child).addTrustedUuid(player.getUuid());
+   }
+
+   public boolean isChasing() {
+      return this.getFoxFlag(16);
+   }
+
+   public void setChasing(boolean chasing) {
+      this.setFoxFlag(16, chasing);
+   }
+
+   public boolean isFullyCrouched() {
+      return this.extraRollingHeight == 3.0F;
+   }
+
+   public void setCrouching(boolean crouching) {
+      this.setFoxFlag(4, crouching);
+   }
+
+   @Override
+   public boolean isInSneakingPose() {
+      return this.getFoxFlag(4);
+   }
+
+   public void setRollingHead(boolean rollingHead) {
+      this.setFoxFlag(8, rollingHead);
+   }
+
+   public boolean isRollingHead() {
+      return this.getFoxFlag(8);
+   }
+
+   public float getHeadRoll(float tickDelta) {
+      return MathHelper.lerp(tickDelta, this.lastHeadRollProgress, this.headRollProgress) * 0.11F * (float) Math.PI;
+   }
+
+   public float getBodyRotationHeightOffset(float tickDelta) {
+      return MathHelper.lerp(tickDelta, this.lastExtraRollingHeight, this.extraRollingHeight);
+   }
+
+   @Override
+   public void setTarget(@Nullable LivingEntity target) {
+      if (this.isAggressive() && target == null) {
+         this.setAggressive(false);
+      }
+
+      super.setTarget(target);
+   }
+
+   @Override
+   protected int computeFallDamage(float fallDistance, float damageMultiplier) {
+      return MathHelper.ceil((fallDistance - 5.0F) * damageMultiplier);
+   }
+
+   private void stopSleeping() {
+      this.setSleeping(false);
+   }
+
+   private void stopActions() {
+      this.setRollingHead(false);
+      this.setCrouching(false);
+      this.setSitting(false);
+      this.setSleeping(false);
+      this.setAggressive(false);
+      this.setWalking(false);
+   }
+
+   private boolean wantsToPickupItem() {
+      return !this.isSleeping() && !this.isSitting() && !this.isWalking();
+   }
+
+   @Override
+   public void playAmbientSound() {
+      SoundEvent _snowman = this.getAmbientSound();
+      if (_snowman == SoundEvents.ENTITY_FOX_SCREECH) {
+         this.playSound(_snowman, 2.0F, this.getSoundPitch());
+      } else {
+         super.playAmbientSound();
+      }
+   }
+
+   @Nullable
+   @Override
+   protected SoundEvent getAmbientSound() {
+      if (this.isSleeping()) {
+         return SoundEvents.ENTITY_FOX_SLEEP;
+      } else {
+         if (!this.world.isDay() && this.random.nextFloat() < 0.1F) {
+            List<PlayerEntity> _snowman = this.world
+               .getEntitiesByClass(PlayerEntity.class, this.getBoundingBox().expand(16.0, 16.0, 16.0), EntityPredicates.EXCEPT_SPECTATOR);
+            if (_snowman.isEmpty()) {
+               return SoundEvents.ENTITY_FOX_SCREECH;
+            }
+         }
+
+         return SoundEvents.ENTITY_FOX_AMBIENT;
+      }
+   }
+
+   @Nullable
+   @Override
+   protected SoundEvent getHurtSound(DamageSource source) {
+      return SoundEvents.ENTITY_FOX_HURT;
+   }
+
+   @Nullable
+   @Override
+   protected SoundEvent getDeathSound() {
+      return SoundEvents.ENTITY_FOX_DEATH;
+   }
+
+   private boolean canTrust(UUID uuid) {
+      return this.getTrustedUuids().contains(uuid);
+   }
+
+   @Override
+   protected void drop(DamageSource source) {
+      ItemStack _snowman = this.getEquippedStack(EquipmentSlot.MAINHAND);
+      if (!_snowman.isEmpty()) {
+         this.dropStack(_snowman);
+         this.equipStack(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+      }
+
+      super.drop(source);
+   }
+
+   public static boolean canJumpChase(FoxEntity fox, LivingEntity chasedEntity) {
+      double _snowman = chasedEntity.getZ() - fox.getZ();
+      double _snowmanx = chasedEntity.getX() - fox.getX();
+      double _snowmanxx = _snowman / _snowmanx;
+      int _snowmanxxx = 6;
+
+      for (int _snowmanxxxx = 0; _snowmanxxxx < 6; _snowmanxxxx++) {
+         double _snowmanxxxxx = _snowmanxx == 0.0 ? 0.0 : _snowman * (double)((float)_snowmanxxxx / 6.0F);
+         double _snowmanxxxxxx = _snowmanxx == 0.0 ? _snowmanx * (double)((float)_snowmanxxxx / 6.0F) : _snowmanxxxxx / _snowmanxx;
+
+         for (int _snowmanxxxxxxx = 1; _snowmanxxxxxxx < 4; _snowmanxxxxxxx++) {
+            if (!fox.world.getBlockState(new BlockPos(fox.getX() + _snowmanxxxxxx, fox.getY() + (double)_snowmanxxxxxxx, fox.getZ() + _snowmanxxxxx)).getMaterial().isReplaceable()) {
+               return false;
+            }
+         }
+      }
+
+      return true;
+   }
+
+   @Override
+   public Vec3d method_29919() {
+      return new Vec3d(0.0, (double)(0.55F * this.getStandingEyeHeight()), (double)(this.getWidth() * 0.4F));
+   }
+
+   class AttackGoal extends MeleeAttackGoal {
+      public AttackGoal(double speed, boolean pauseWhenIdle) {
+         super(FoxEntity.this, speed, pauseWhenIdle);
+      }
+
+      @Override
+      protected void attack(LivingEntity target, double squaredDistance) {
+         double _snowman = this.getSquaredMaxAttackDistance(target);
+         if (squaredDistance <= _snowman && this.method_28347()) {
+            this.method_28346();
+            this.mob.tryAttack(target);
+            FoxEntity.this.playSound(SoundEvents.ENTITY_FOX_BITE, 1.0F, 1.0F);
+         }
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.setRollingHead(false);
+         super.start();
+      }
+
+      @Override
+      public boolean canStart() {
+         return !FoxEntity.this.isSitting()
+            && !FoxEntity.this.isSleeping()
+            && !FoxEntity.this.isInSneakingPose()
+            && !FoxEntity.this.isWalking()
+            && super.canStart();
+      }
+   }
+
+   class AvoidDaylightGoal extends EscapeSunlightGoal {
+      private int timer = 100;
+
+      public AvoidDaylightGoal(double speed) {
+         super(FoxEntity.this, speed);
+      }
+
+      @Override
+      public boolean canStart() {
+         if (FoxEntity.this.isSleeping() || this.mob.getTarget() != null) {
+            return false;
+         } else if (FoxEntity.this.world.isThundering()) {
+            return true;
+         } else if (this.timer > 0) {
+            this.timer--;
+            return false;
+         } else {
+            this.timer = 100;
+            BlockPos _snowman = this.mob.getBlockPos();
+            return FoxEntity.this.world.isDay()
+               && FoxEntity.this.world.isSkyVisible(_snowman)
+               && !((ServerWorld)FoxEntity.this.world).isNearOccupiedPointOfInterest(_snowman)
+               && this.targetShadedPos();
+         }
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.stopActions();
+         super.start();
+      }
+   }
+
+   abstract class CalmDownGoal extends Goal {
+      private final TargetPredicate WORRIABLE_ENTITY_PREDICATE = new TargetPredicate()
+         .setBaseMaxDistance(12.0)
+         .includeHidden()
+         .setPredicate(FoxEntity.this.new WorriableEntityFilter());
+
+      private CalmDownGoal() {
+      }
+
+      protected boolean isAtFavoredLocation() {
+         BlockPos _snowman = new BlockPos(FoxEntity.this.getX(), FoxEntity.this.getBoundingBox().maxY, FoxEntity.this.getZ());
+         return !FoxEntity.this.world.isSkyVisible(_snowman) && FoxEntity.this.getPathfindingFavor(_snowman) >= 0.0F;
+      }
+
+      protected boolean canCalmDown() {
+         return !FoxEntity.this.world
+            .getTargets(LivingEntity.class, this.WORRIABLE_ENTITY_PREDICATE, FoxEntity.this, FoxEntity.this.getBoundingBox().expand(12.0, 6.0, 12.0))
+            .isEmpty();
+      }
+   }
+
+   class DefendFriendGoal extends FollowTargetGoal<LivingEntity> {
+      @Nullable
+      private LivingEntity offender;
+      private LivingEntity friend;
+      private int lastAttackedTime;
+
+      public DefendFriendGoal(Class<LivingEntity> targetEntityClass, boolean checkVisibility, boolean checkCanNavigate, Predicate<LivingEntity> targetPredicate) {
+         super(FoxEntity.this, targetEntityClass, 10, checkVisibility, checkCanNavigate, targetPredicate);
+      }
+
+      @Override
+      public boolean canStart() {
+         if (this.reciprocalChance > 0 && this.mob.getRandom().nextInt(this.reciprocalChance) != 0) {
+            return false;
+         } else {
+            for (UUID _snowman : FoxEntity.this.getTrustedUuids()) {
+               if (_snowman != null && FoxEntity.this.world instanceof ServerWorld) {
+                  Entity _snowmanx = ((ServerWorld)FoxEntity.this.world).getEntity(_snowman);
+                  if (_snowmanx instanceof LivingEntity) {
+                     LivingEntity _snowmanxx = (LivingEntity)_snowmanx;
+                     this.friend = _snowmanxx;
+                     this.offender = _snowmanxx.getAttacker();
+                     int _snowmanxxx = _snowmanxx.getLastAttackedTime();
+                     return _snowmanxxx != this.lastAttackedTime && this.canTrack(this.offender, this.targetPredicate);
+                  }
+               }
+            }
+
+            return false;
+         }
+      }
+
+      @Override
+      public void start() {
+         this.setTargetEntity(this.offender);
+         this.targetEntity = this.offender;
+         if (this.friend != null) {
+            this.lastAttackedTime = this.friend.getLastAttackedTime();
+         }
+
+         FoxEntity.this.playSound(SoundEvents.ENTITY_FOX_AGGRO, 1.0F, 1.0F);
+         FoxEntity.this.setAggressive(true);
+         FoxEntity.this.stopSleeping();
+         super.start();
+      }
+   }
+
+   class DelayedCalmDownGoal extends FoxEntity.CalmDownGoal {
+      private int timer = FoxEntity.this.random.nextInt(140);
+
+      public DelayedCalmDownGoal() {
+         this.setControls(EnumSet.of(Goal.Control.MOVE, Goal.Control.LOOK, Goal.Control.JUMP));
+      }
+
+      @Override
+      public boolean canStart() {
+         return FoxEntity.this.sidewaysSpeed == 0.0F && FoxEntity.this.upwardSpeed == 0.0F && FoxEntity.this.forwardSpeed == 0.0F
+            ? this.canNotCalmDown() || FoxEntity.this.isSleeping()
+            : false;
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return this.canNotCalmDown();
+      }
+
+      private boolean canNotCalmDown() {
+         if (this.timer > 0) {
+            this.timer--;
+            return false;
+         } else {
+            return FoxEntity.this.world.isDay() && this.isAtFavoredLocation() && !this.canCalmDown();
+         }
+      }
+
+      @Override
+      public void stop() {
+         this.timer = FoxEntity.this.random.nextInt(140);
+         FoxEntity.this.stopActions();
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.setSitting(false);
+         FoxEntity.this.setCrouching(false);
+         FoxEntity.this.setRollingHead(false);
+         FoxEntity.this.setJumping(false);
+         FoxEntity.this.setSleeping(true);
+         FoxEntity.this.getNavigation().stop();
+         FoxEntity.this.getMoveControl().moveTo(FoxEntity.this.getX(), FoxEntity.this.getY(), FoxEntity.this.getZ(), 0.0);
+      }
+   }
+
+   public class EatSweetBerriesGoal extends MoveToTargetPosGoal {
+      protected int timer;
+
+      public EatSweetBerriesGoal(double speed, int range, int maxYDifference) {
+         super(FoxEntity.this, speed, range, maxYDifference);
+      }
+
+      @Override
+      public double getDesiredSquaredDistanceToTarget() {
+         return 2.0;
+      }
+
+      @Override
+      public boolean shouldResetPath() {
+         return this.tryingTime % 100 == 0;
+      }
+
+      @Override
+      protected boolean isTargetPos(WorldView world, BlockPos pos) {
+         BlockState _snowman = world.getBlockState(pos);
+         return _snowman.isOf(Blocks.SWEET_BERRY_BUSH) && _snowman.get(SweetBerryBushBlock.AGE) >= 2;
+      }
+
+      @Override
+      public void tick() {
+         if (this.hasReached()) {
+            if (this.timer >= 40) {
+               this.eatSweetBerry();
+            } else {
+               this.timer++;
+            }
+         } else if (!this.hasReached() && FoxEntity.this.random.nextFloat() < 0.05F) {
+            FoxEntity.this.playSound(SoundEvents.ENTITY_FOX_SNIFF, 1.0F, 1.0F);
+         }
+
+         super.tick();
+      }
+
+      protected void eatSweetBerry() {
+         if (FoxEntity.this.world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            BlockState _snowman = FoxEntity.this.world.getBlockState(this.targetPos);
+            if (_snowman.isOf(Blocks.SWEET_BERRY_BUSH)) {
+               int _snowmanx = _snowman.get(SweetBerryBushBlock.AGE);
+               _snowman.with(SweetBerryBushBlock.AGE, Integer.valueOf(1));
+               int _snowmanxx = 1 + FoxEntity.this.world.random.nextInt(2) + (_snowmanx == 3 ? 1 : 0);
+               ItemStack _snowmanxxx = FoxEntity.this.getEquippedStack(EquipmentSlot.MAINHAND);
+               if (_snowmanxxx.isEmpty()) {
+                  FoxEntity.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.SWEET_BERRIES));
+                  _snowmanxx--;
+               }
+
+               if (_snowmanxx > 0) {
+                  Block.dropStack(FoxEntity.this.world, this.targetPos, new ItemStack(Items.SWEET_BERRIES, _snowmanxx));
+               }
+
+               FoxEntity.this.playSound(SoundEvents.ITEM_SWEET_BERRIES_PICK_FROM_BUSH, 1.0F, 1.0F);
+               FoxEntity.this.world.setBlockState(this.targetPos, _snowman.with(SweetBerryBushBlock.AGE, Integer.valueOf(1)), 2);
+            }
+         }
+      }
+
+      @Override
+      public boolean canStart() {
+         return !FoxEntity.this.isSleeping() && super.canStart();
+      }
+
+      @Override
+      public void start() {
+         this.timer = 0;
+         FoxEntity.this.setSitting(false);
+         super.start();
+      }
+   }
+
+   class EscapeWhenNotAggressiveGoal extends EscapeDangerGoal {
+      public EscapeWhenNotAggressiveGoal(double speed) {
+         super(FoxEntity.this, speed);
+      }
+
+      @Override
+      public boolean canStart() {
+         return !FoxEntity.this.isAggressive() && super.canStart();
+      }
+   }
+
+   class FollowParentGoal extends net.minecraft.entity.ai.goal.FollowParentGoal {
+      private final FoxEntity fox;
+
+      public FollowParentGoal(FoxEntity fox, double speed) {
+         super(fox, speed);
+         this.fox = fox;
+      }
+
+      @Override
+      public boolean canStart() {
+         return !this.fox.isAggressive() && super.canStart();
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return !this.fox.isAggressive() && super.shouldContinue();
+      }
+
+      @Override
+      public void start() {
+         this.fox.stopActions();
+         super.start();
+      }
+   }
+
+   public static class FoxData extends PassiveEntity.PassiveData {
+      public final FoxEntity.Type type;
+
+      public FoxData(FoxEntity.Type type) {
+         super(false);
+         this.type = type;
+      }
+   }
+
+   public class FoxLookControl extends LookControl {
+      public FoxLookControl() {
+         super(FoxEntity.this);
+      }
+
+      @Override
+      public void tick() {
+         if (!FoxEntity.this.isSleeping()) {
+            super.tick();
+         }
+      }
+
+      @Override
+      protected boolean shouldStayHorizontal() {
+         return !FoxEntity.this.isChasing() && !FoxEntity.this.isInSneakingPose() && !FoxEntity.this.isRollingHead() & !FoxEntity.this.isWalking();
+      }
+   }
+
+   class FoxMoveControl extends MoveControl {
+      public FoxMoveControl() {
+         super(FoxEntity.this);
+      }
+
+      @Override
+      public void tick() {
+         if (FoxEntity.this.wantsToPickupItem()) {
+            super.tick();
+         }
+      }
+   }
+
+   class FoxSwimGoal extends SwimGoal {
+      public FoxSwimGoal() {
+         super(FoxEntity.this);
+      }
+
+      @Override
+      public void start() {
+         super.start();
+         FoxEntity.this.stopActions();
+      }
+
+      @Override
+      public boolean canStart() {
+         return FoxEntity.this.isTouchingWater() && FoxEntity.this.getFluidHeight(FluidTags.WATER) > 0.25 || FoxEntity.this.isInLava();
+      }
+   }
+
+   class GoToVillageGoal extends net.minecraft.entity.ai.goal.GoToVillageGoal {
+      public GoToVillageGoal(int unused, int searchRange) {
+         super(FoxEntity.this, searchRange);
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.stopActions();
+         super.start();
+      }
+
+      @Override
+      public boolean canStart() {
+         return super.canStart() && this.canGoToVillage();
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return super.shouldContinue() && this.canGoToVillage();
+      }
+
+      private boolean canGoToVillage() {
+         return !FoxEntity.this.isSleeping() && !FoxEntity.this.isSitting() && !FoxEntity.this.isAggressive() && FoxEntity.this.getTarget() == null;
+      }
+   }
+
+   public class JumpChasingGoal extends DiveJumpingGoal {
+      public JumpChasingGoal() {
+      }
+
+      @Override
+      public boolean canStart() {
+         if (!FoxEntity.this.isFullyCrouched()) {
+            return false;
+         } else {
+            LivingEntity _snowman = FoxEntity.this.getTarget();
+            if (_snowman != null && _snowman.isAlive()) {
+               if (_snowman.getMovementDirection() != _snowman.getHorizontalFacing()) {
+                  return false;
+               } else {
+                  boolean _snowmanx = FoxEntity.canJumpChase(FoxEntity.this, _snowman);
+                  if (!_snowmanx) {
+                     FoxEntity.this.getNavigation().findPathTo(_snowman, 0);
+                     FoxEntity.this.setCrouching(false);
+                     FoxEntity.this.setRollingHead(false);
+                  }
+
+                  return _snowmanx;
+               }
+            } else {
+               return false;
+            }
+         }
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         LivingEntity _snowman = FoxEntity.this.getTarget();
+         if (_snowman != null && _snowman.isAlive()) {
+            double _snowmanx = FoxEntity.this.getVelocity().y;
+            return (!(_snowmanx * _snowmanx < 0.05F) || !(Math.abs(FoxEntity.this.pitch) < 15.0F) || !FoxEntity.this.onGround) && !FoxEntity.this.isWalking();
+         } else {
+            return false;
+         }
+      }
+
+      @Override
+      public boolean canStop() {
+         return false;
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.setJumping(true);
+         FoxEntity.this.setChasing(true);
+         FoxEntity.this.setRollingHead(false);
+         LivingEntity _snowman = FoxEntity.this.getTarget();
+         FoxEntity.this.getLookControl().lookAt(_snowman, 60.0F, 30.0F);
+         Vec3d _snowmanx = new Vec3d(_snowman.getX() - FoxEntity.this.getX(), _snowman.getY() - FoxEntity.this.getY(), _snowman.getZ() - FoxEntity.this.getZ()).normalize();
+         FoxEntity.this.setVelocity(FoxEntity.this.getVelocity().add(_snowmanx.x * 0.8, 0.9, _snowmanx.z * 0.8));
+         FoxEntity.this.getNavigation().stop();
+      }
+
+      @Override
+      public void stop() {
+         FoxEntity.this.setCrouching(false);
+         FoxEntity.this.extraRollingHeight = 0.0F;
+         FoxEntity.this.lastExtraRollingHeight = 0.0F;
+         FoxEntity.this.setRollingHead(false);
+         FoxEntity.this.setChasing(false);
+      }
+
+      @Override
+      public void tick() {
+         LivingEntity _snowman = FoxEntity.this.getTarget();
+         if (_snowman != null) {
+            FoxEntity.this.getLookControl().lookAt(_snowman, 60.0F, 30.0F);
+         }
+
+         if (!FoxEntity.this.isWalking()) {
+            Vec3d _snowmanx = FoxEntity.this.getVelocity();
+            if (_snowmanx.y * _snowmanx.y < 0.03F && FoxEntity.this.pitch != 0.0F) {
+               FoxEntity.this.pitch = MathHelper.lerpAngle(FoxEntity.this.pitch, 0.0F, 0.2F);
+            } else {
+               double _snowmanxx = Math.sqrt(Entity.squaredHorizontalLength(_snowmanx));
+               double _snowmanxxx = Math.signum(-_snowmanx.y) * Math.acos(_snowmanxx / _snowmanx.length()) * 180.0F / (float)Math.PI;
+               FoxEntity.this.pitch = (float)_snowmanxxx;
+            }
+         }
+
+         if (_snowman != null && FoxEntity.this.distanceTo(_snowman) <= 2.0F) {
+            FoxEntity.this.tryAttack(_snowman);
+         } else if (FoxEntity.this.pitch > 0.0F
+            && FoxEntity.this.onGround
+            && (float)FoxEntity.this.getVelocity().y != 0.0F
+            && FoxEntity.this.world.getBlockState(FoxEntity.this.getBlockPos()).isOf(Blocks.SNOW)) {
+            FoxEntity.this.pitch = 60.0F;
+            FoxEntity.this.setTarget(null);
+            FoxEntity.this.setWalking(true);
+         }
+      }
+   }
+
+   class LookAtEntityGoal extends net.minecraft.entity.ai.goal.LookAtEntityGoal {
+      public LookAtEntityGoal(MobEntity fox, Class<? extends LivingEntity> targetType, float range) {
+         super(fox, targetType, range);
+      }
+
+      @Override
+      public boolean canStart() {
+         return super.canStart() && !FoxEntity.this.isWalking() && !FoxEntity.this.isRollingHead();
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return super.shouldContinue() && !FoxEntity.this.isWalking() && !FoxEntity.this.isRollingHead();
+      }
+   }
+
+   class MateGoal extends AnimalMateGoal {
+      public MateGoal(double chance) {
+         super(FoxEntity.this, chance);
+      }
+
+      @Override
+      public void start() {
+         ((FoxEntity)this.animal).stopActions();
+         ((FoxEntity)this.mate).stopActions();
+         super.start();
+      }
+
+      @Override
+      protected void breed() {
+         ServerWorld _snowman = (ServerWorld)this.world;
+         FoxEntity _snowmanx = (FoxEntity)this.animal.createChild(_snowman, this.mate);
+         if (_snowmanx != null) {
+            ServerPlayerEntity _snowmanxx = this.animal.getLovingPlayer();
+            ServerPlayerEntity _snowmanxxx = this.mate.getLovingPlayer();
+            ServerPlayerEntity _snowmanxxxx = _snowmanxx;
+            if (_snowmanxx != null) {
+               _snowmanx.addTrustedUuid(_snowmanxx.getUuid());
+            } else {
+               _snowmanxxxx = _snowmanxxx;
+            }
+
+            if (_snowmanxxx != null && _snowmanxx != _snowmanxxx) {
+               _snowmanx.addTrustedUuid(_snowmanxxx.getUuid());
+            }
+
+            if (_snowmanxxxx != null) {
+               _snowmanxxxx.incrementStat(Stats.ANIMALS_BRED);
+               Criteria.BRED_ANIMALS.trigger(_snowmanxxxx, this.animal, this.mate, _snowmanx);
+            }
+
+            this.animal.setBreedingAge(6000);
+            this.mate.setBreedingAge(6000);
+            this.animal.resetLoveTicks();
+            this.mate.resetLoveTicks();
+            _snowmanx.setBreedingAge(-24000);
+            _snowmanx.refreshPositionAndAngles(this.animal.getX(), this.animal.getY(), this.animal.getZ(), 0.0F, 0.0F);
+            _snowman.spawnEntityAndPassengers(_snowmanx);
+            this.world.sendEntityStatus(this.animal, (byte)18);
+            if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT)) {
+               this.world
+                  .spawnEntity(
+                     new ExperienceOrbEntity(this.world, this.animal.getX(), this.animal.getY(), this.animal.getZ(), this.animal.getRandom().nextInt(7) + 1)
+                  );
+            }
+         }
+      }
+   }
+
+   class MoveToHuntGoal extends Goal {
+      public MoveToHuntGoal() {
+         this.setControls(EnumSet.of(Goal.Control.MOVE, Goal.Control.LOOK));
+      }
+
+      @Override
+      public boolean canStart() {
+         if (FoxEntity.this.isSleeping()) {
+            return false;
+         } else {
+            LivingEntity _snowman = FoxEntity.this.getTarget();
+            return _snowman != null
+               && _snowman.isAlive()
+               && FoxEntity.CHICKEN_AND_RABBIT_FILTER.test(_snowman)
+               && FoxEntity.this.squaredDistanceTo(_snowman) > 36.0
+               && !FoxEntity.this.isInSneakingPose()
+               && !FoxEntity.this.isRollingHead()
+               && !FoxEntity.this.jumping;
+         }
+      }
+
+      @Override
+      public void start() {
+         FoxEntity.this.setSitting(false);
+         FoxEntity.this.setWalking(false);
+      }
+
+      @Override
+      public void stop() {
+         LivingEntity _snowman = FoxEntity.this.getTarget();
+         if (_snowman != null && FoxEntity.canJumpChase(FoxEntity.this, _snowman)) {
+            FoxEntity.this.setRollingHead(true);
+            FoxEntity.this.setCrouching(true);
+            FoxEntity.this.getNavigation().stop();
+            FoxEntity.this.getLookControl().lookAt(_snowman, (float)FoxEntity.this.getBodyYawSpeed(), (float)FoxEntity.this.getLookPitchSpeed());
+         } else {
+            FoxEntity.this.setRollingHead(false);
+            FoxEntity.this.setCrouching(false);
+         }
+      }
+
+      @Override
+      public void tick() {
+         LivingEntity _snowman = FoxEntity.this.getTarget();
+         FoxEntity.this.getLookControl().lookAt(_snowman, (float)FoxEntity.this.getBodyYawSpeed(), (float)FoxEntity.this.getLookPitchSpeed());
+         if (FoxEntity.this.squaredDistanceTo(_snowman) <= 36.0) {
+            FoxEntity.this.setRollingHead(true);
+            FoxEntity.this.setCrouching(true);
+            FoxEntity.this.getNavigation().stop();
+         } else {
+            FoxEntity.this.getNavigation().startMovingTo(_snowman, 1.5);
+         }
+      }
+   }
+
+   class PickupItemGoal extends Goal {
+      public PickupItemGoal() {
+         this.setControls(EnumSet.of(Goal.Control.MOVE));
+      }
+
+      @Override
+      public boolean canStart() {
+         if (!FoxEntity.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty()) {
+            return false;
+         } else if (FoxEntity.this.getTarget() != null || FoxEntity.this.getAttacker() != null) {
+            return false;
+         } else if (!FoxEntity.this.wantsToPickupItem()) {
+            return false;
+         } else if (FoxEntity.this.getRandom().nextInt(10) != 0) {
+            return false;
+         } else {
+            List<ItemEntity> _snowman = FoxEntity.this.world
+               .getEntitiesByClass(ItemEntity.class, FoxEntity.this.getBoundingBox().expand(8.0, 8.0, 8.0), FoxEntity.PICKABLE_DROP_FILTER);
+            return !_snowman.isEmpty() && FoxEntity.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+         }
+      }
+
+      @Override
+      public void tick() {
+         List<ItemEntity> _snowman = FoxEntity.this.world
+            .getEntitiesByClass(ItemEntity.class, FoxEntity.this.getBoundingBox().expand(8.0, 8.0, 8.0), FoxEntity.PICKABLE_DROP_FILTER);
+         ItemStack _snowmanx = FoxEntity.this.getEquippedStack(EquipmentSlot.MAINHAND);
+         if (_snowmanx.isEmpty() && !_snowman.isEmpty()) {
+            FoxEntity.this.getNavigation().startMovingTo(_snowman.get(0), 1.2F);
+         }
+      }
+
+      @Override
+      public void start() {
+         List<ItemEntity> _snowman = FoxEntity.this.world
+            .getEntitiesByClass(ItemEntity.class, FoxEntity.this.getBoundingBox().expand(8.0, 8.0, 8.0), FoxEntity.PICKABLE_DROP_FILTER);
+         if (!_snowman.isEmpty()) {
+            FoxEntity.this.getNavigation().startMovingTo(_snowman.get(0), 1.2F);
+         }
+      }
+   }
+
+   class SitDownAndLookAroundGoal extends FoxEntity.CalmDownGoal {
+      private double lookX;
+      private double lookZ;
+      private int timer;
+      private int counter;
+
+      public SitDownAndLookAroundGoal() {
+         this.setControls(EnumSet.of(Goal.Control.MOVE, Goal.Control.LOOK));
+      }
+
+      @Override
+      public boolean canStart() {
+         return FoxEntity.this.getAttacker() == null
+            && FoxEntity.this.getRandom().nextFloat() < 0.02F
+            && !FoxEntity.this.isSleeping()
+            && FoxEntity.this.getTarget() == null
+            && FoxEntity.this.getNavigation().isIdle()
+            && !this.canCalmDown()
+            && !FoxEntity.this.isChasing()
+            && !FoxEntity.this.isInSneakingPose();
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return this.counter > 0;
+      }
+
+      @Override
+      public void start() {
+         this.chooseNewAngle();
+         this.counter = 2 + FoxEntity.this.getRandom().nextInt(3);
+         FoxEntity.this.setSitting(true);
+         FoxEntity.this.getNavigation().stop();
+      }
+
+      @Override
+      public void stop() {
+         FoxEntity.this.setSitting(false);
+      }
+
+      @Override
+      public void tick() {
+         this.timer--;
+         if (this.timer <= 0) {
+            this.counter--;
+            this.chooseNewAngle();
+         }
+
+         FoxEntity.this.getLookControl()
+            .lookAt(
+               FoxEntity.this.getX() + this.lookX,
+               FoxEntity.this.getEyeY(),
+               FoxEntity.this.getZ() + this.lookZ,
+               (float)FoxEntity.this.getBodyYawSpeed(),
+               (float)FoxEntity.this.getLookPitchSpeed()
+            );
+      }
+
+      private void chooseNewAngle() {
+         double _snowman = (Math.PI * 2) * FoxEntity.this.getRandom().nextDouble();
+         this.lookX = Math.cos(_snowman);
+         this.lookZ = Math.sin(_snowman);
+         this.timer = 80 + FoxEntity.this.getRandom().nextInt(20);
+      }
+   }
+
+   class StopWanderingGoal extends Goal {
+      int timer;
+
+      public StopWanderingGoal() {
+         this.setControls(EnumSet.of(Goal.Control.LOOK, Goal.Control.JUMP, Goal.Control.MOVE));
+      }
+
+      @Override
+      public boolean canStart() {
+         return FoxEntity.this.isWalking();
+      }
+
+      @Override
+      public boolean shouldContinue() {
+         return this.canStart() && this.timer > 0;
+      }
+
+      @Override
+      public void start() {
+         this.timer = 40;
+      }
+
+      @Override
+      public void stop() {
+         FoxEntity.this.setWalking(false);
+      }
+
+      @Override
+      public void tick() {
+         this.timer--;
+      }
+   }
+
+   public static enum Type {
+      RED(
+         0,
+         "red",
+         BiomeKeys.TAIGA,
+         BiomeKeys.TAIGA_HILLS,
+         BiomeKeys.TAIGA_MOUNTAINS,
+         BiomeKeys.GIANT_TREE_TAIGA,
+         BiomeKeys.GIANT_SPRUCE_TAIGA,
+         BiomeKeys.GIANT_TREE_TAIGA_HILLS,
+         BiomeKeys.GIANT_SPRUCE_TAIGA_HILLS
+      ),
+      SNOW(1, "snow", BiomeKeys.SNOWY_TAIGA, BiomeKeys.SNOWY_TAIGA_HILLS, BiomeKeys.SNOWY_TAIGA_MOUNTAINS);
+
+      private static final FoxEntity.Type[] TYPES = Arrays.stream(values())
+         .sorted(Comparator.comparingInt(FoxEntity.Type::getId))
+         .toArray(FoxEntity.Type[]::new);
+      private static final Map<String, FoxEntity.Type> NAME_TYPE_MAP = Arrays.stream(values())
+         .collect(Collectors.toMap(FoxEntity.Type::getKey, _snowman -> (FoxEntity.Type)_snowman));
+      private final int id;
+      private final String key;
+      private final List<RegistryKey<Biome>> biomes;
+
+      private Type(int id, String key, RegistryKey<Biome>... var5) {
+         this.id = id;
+         this.key = key;
+         this.biomes = Arrays.asList(_snowman);
+      }
+
+      public String getKey() {
+         return this.key;
+      }
+
+      public int getId() {
+         return this.id;
+      }
+
+      public static FoxEntity.Type byName(String name) {
+         return NAME_TYPE_MAP.getOrDefault(name, RED);
+      }
+
+      public static FoxEntity.Type fromId(int id) {
+         if (id < 0 || id > TYPES.length) {
+            id = 0;
+         }
+
+         return TYPES[id];
+      }
+
+      public static FoxEntity.Type fromBiome(Optional<RegistryKey<Biome>> _snowman) {
+         return _snowman.isPresent() && SNOW.biomes.contains(_snowman.get()) ? SNOW : RED;
+      }
+   }
+
+   public class WorriableEntityFilter implements Predicate<LivingEntity> {
+      public WorriableEntityFilter() {
+      }
+
+      public boolean test(LivingEntity _snowman) {
+         if (_snowman instanceof FoxEntity) {
+            return false;
+         } else if (_snowman instanceof ChickenEntity || _snowman instanceof RabbitEntity || _snowman instanceof HostileEntity) {
+            return true;
+         } else if (_snowman instanceof TameableEntity) {
+            return !((TameableEntity)_snowman).isTamed();
+         } else if (!(_snowman instanceof PlayerEntity) || !_snowman.isSpectator() && !((PlayerEntity)_snowman).isCreative()) {
+            return FoxEntity.this.canTrust(_snowman.getUuid()) ? false : !_snowman.isSleeping() && !_snowman.isSneaky();
+         } else {
+            return false;
+         }
+      }
+   }
+}

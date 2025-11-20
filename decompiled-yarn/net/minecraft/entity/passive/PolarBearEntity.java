@@ -1,0 +1,353 @@
+package net.minecraft.entity.passive;
+
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Random;
+import java.util.UUID;
+import javax.annotation.Nullable;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityData;
+import net.minecraft.entity.EntityDimensions;
+import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.entity.ai.Durations;
+import net.minecraft.entity.ai.goal.EscapeDangerGoal;
+import net.minecraft.entity.ai.goal.FollowParentGoal;
+import net.minecraft.entity.ai.goal.FollowTargetGoal;
+import net.minecraft.entity.ai.goal.LookAroundGoal;
+import net.minecraft.entity.ai.goal.LookAtEntityGoal;
+import net.minecraft.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.entity.ai.goal.RevengeGoal;
+import net.minecraft.entity.ai.goal.SwimGoal;
+import net.minecraft.entity.ai.goal.UniversalAngerGoal;
+import net.minecraft.entity.ai.goal.WanderAroundGoal;
+import net.minecraft.entity.attribute.DefaultAttributeContainer;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.data.DataTracker;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.mob.Angerable;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.IntRange;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.registry.RegistryKey;
+import net.minecraft.world.LocalDifficulty;
+import net.minecraft.world.ServerWorldAccess;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldAccess;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.BiomeKeys;
+
+public class PolarBearEntity extends AnimalEntity implements Angerable {
+   private static final TrackedData<Boolean> WARNING = DataTracker.registerData(PolarBearEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+   private float lastWarningAnimationProgress;
+   private float warningAnimationProgress;
+   private int warningSoundCooldown;
+   private static final IntRange ANGER_TIME_RANGE = Durations.betweenSeconds(20, 39);
+   private int angerTime;
+   private UUID targetUuid;
+
+   public PolarBearEntity(EntityType<? extends PolarBearEntity> _snowman, World _snowman) {
+      super(_snowman, _snowman);
+   }
+
+   @Override
+   public PassiveEntity createChild(ServerWorld world, PassiveEntity entity) {
+      return EntityType.POLAR_BEAR.create(world);
+   }
+
+   @Override
+   public boolean isBreedingItem(ItemStack stack) {
+      return false;
+   }
+
+   @Override
+   protected void initGoals() {
+      super.initGoals();
+      this.goalSelector.add(0, new SwimGoal(this));
+      this.goalSelector.add(1, new PolarBearEntity.AttackGoal());
+      this.goalSelector.add(1, new PolarBearEntity.PolarBearEscapeDangerGoal());
+      this.goalSelector.add(4, new FollowParentGoal(this, 1.25));
+      this.goalSelector.add(5, new WanderAroundGoal(this, 1.0));
+      this.goalSelector.add(6, new LookAtEntityGoal(this, PlayerEntity.class, 6.0F));
+      this.goalSelector.add(7, new LookAroundGoal(this));
+      this.targetSelector.add(1, new PolarBearEntity.PolarBearRevengeGoal());
+      this.targetSelector.add(2, new PolarBearEntity.FollowPlayersGoal());
+      this.targetSelector.add(3, new FollowTargetGoal<>(this, PlayerEntity.class, 10, true, false, this::shouldAngerAt));
+      this.targetSelector.add(4, new FollowTargetGoal<>(this, FoxEntity.class, 10, true, true, null));
+      this.targetSelector.add(5, new UniversalAngerGoal<>(this, false));
+   }
+
+   public static DefaultAttributeContainer.Builder createPolarBearAttributes() {
+      return MobEntity.createMobAttributes()
+         .add(EntityAttributes.GENERIC_MAX_HEALTH, 30.0)
+         .add(EntityAttributes.GENERIC_FOLLOW_RANGE, 20.0)
+         .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.25)
+         .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 6.0);
+   }
+
+   public static boolean canSpawn(EntityType<PolarBearEntity> type, WorldAccess world, SpawnReason spawnReason, BlockPos pos, Random random) {
+      Optional<RegistryKey<Biome>> _snowman = world.method_31081(pos);
+      return !Objects.equals(_snowman, Optional.of(BiomeKeys.FROZEN_OCEAN)) && !Objects.equals(_snowman, Optional.of(BiomeKeys.DEEP_FROZEN_OCEAN))
+         ? isValidNaturalSpawn(type, world, spawnReason, pos, random)
+         : world.getBaseLightLevel(pos, 0) > 8 && world.getBlockState(pos.down()).isOf(Blocks.ICE);
+   }
+
+   @Override
+   public void readCustomDataFromTag(CompoundTag tag) {
+      super.readCustomDataFromTag(tag);
+      this.angerFromTag((ServerWorld)this.world, tag);
+   }
+
+   @Override
+   public void writeCustomDataToTag(CompoundTag tag) {
+      super.writeCustomDataToTag(tag);
+      this.angerToTag(tag);
+   }
+
+   @Override
+   public void chooseRandomAngerTime() {
+      this.setAngerTime(ANGER_TIME_RANGE.choose(this.random));
+   }
+
+   @Override
+   public void setAngerTime(int ticks) {
+      this.angerTime = ticks;
+   }
+
+   @Override
+   public int getAngerTime() {
+      return this.angerTime;
+   }
+
+   @Override
+   public void setAngryAt(@Nullable UUID uuid) {
+      this.targetUuid = uuid;
+   }
+
+   @Override
+   public UUID getAngryAt() {
+      return this.targetUuid;
+   }
+
+   @Override
+   protected SoundEvent getAmbientSound() {
+      return this.isBaby() ? SoundEvents.ENTITY_POLAR_BEAR_AMBIENT_BABY : SoundEvents.ENTITY_POLAR_BEAR_AMBIENT;
+   }
+
+   @Override
+   protected SoundEvent getHurtSound(DamageSource source) {
+      return SoundEvents.ENTITY_POLAR_BEAR_HURT;
+   }
+
+   @Override
+   protected SoundEvent getDeathSound() {
+      return SoundEvents.ENTITY_POLAR_BEAR_DEATH;
+   }
+
+   @Override
+   protected void playStepSound(BlockPos pos, BlockState state) {
+      this.playSound(SoundEvents.ENTITY_POLAR_BEAR_STEP, 0.15F, 1.0F);
+   }
+
+   protected void playWarningSound() {
+      if (this.warningSoundCooldown <= 0) {
+         this.playSound(SoundEvents.ENTITY_POLAR_BEAR_WARNING, 1.0F, this.getSoundPitch());
+         this.warningSoundCooldown = 40;
+      }
+   }
+
+   @Override
+   protected void initDataTracker() {
+      super.initDataTracker();
+      this.dataTracker.startTracking(WARNING, false);
+   }
+
+   @Override
+   public void tick() {
+      super.tick();
+      if (this.world.isClient) {
+         if (this.warningAnimationProgress != this.lastWarningAnimationProgress) {
+            this.calculateDimensions();
+         }
+
+         this.lastWarningAnimationProgress = this.warningAnimationProgress;
+         if (this.isWarning()) {
+            this.warningAnimationProgress = MathHelper.clamp(this.warningAnimationProgress + 1.0F, 0.0F, 6.0F);
+         } else {
+            this.warningAnimationProgress = MathHelper.clamp(this.warningAnimationProgress - 1.0F, 0.0F, 6.0F);
+         }
+      }
+
+      if (this.warningSoundCooldown > 0) {
+         this.warningSoundCooldown--;
+      }
+
+      if (!this.world.isClient) {
+         this.tickAngerLogic((ServerWorld)this.world, true);
+      }
+   }
+
+   @Override
+   public EntityDimensions getDimensions(EntityPose pose) {
+      if (this.warningAnimationProgress > 0.0F) {
+         float _snowman = this.warningAnimationProgress / 6.0F;
+         float _snowmanx = 1.0F + _snowman;
+         return super.getDimensions(pose).scaled(1.0F, _snowmanx);
+      } else {
+         return super.getDimensions(pose);
+      }
+   }
+
+   @Override
+   public boolean tryAttack(Entity target) {
+      boolean _snowman = target.damage(DamageSource.mob(this), (float)((int)this.getAttributeValue(EntityAttributes.GENERIC_ATTACK_DAMAGE)));
+      if (_snowman) {
+         this.dealDamage(this, target);
+      }
+
+      return _snowman;
+   }
+
+   public boolean isWarning() {
+      return this.dataTracker.get(WARNING);
+   }
+
+   public void setWarning(boolean warning) {
+      this.dataTracker.set(WARNING, warning);
+   }
+
+   public float getWarningAnimationProgress(float tickDelta) {
+      return MathHelper.lerp(tickDelta, this.lastWarningAnimationProgress, this.warningAnimationProgress) / 6.0F;
+   }
+
+   @Override
+   protected float getBaseMovementSpeedMultiplier() {
+      return 0.98F;
+   }
+
+   @Override
+   public EntityData initialize(
+      ServerWorldAccess world, LocalDifficulty difficulty, SpawnReason spawnReason, @Nullable EntityData entityData, @Nullable CompoundTag entityTag
+   ) {
+      if (entityData == null) {
+         entityData = new PassiveEntity.PassiveData(1.0F);
+      }
+
+      return super.initialize(world, difficulty, spawnReason, entityData, entityTag);
+   }
+
+   class AttackGoal extends MeleeAttackGoal {
+      public AttackGoal() {
+         super(PolarBearEntity.this, 1.25, true);
+      }
+
+      @Override
+      protected void attack(LivingEntity target, double squaredDistance) {
+         double _snowman = this.getSquaredMaxAttackDistance(target);
+         if (squaredDistance <= _snowman && this.method_28347()) {
+            this.method_28346();
+            this.mob.tryAttack(target);
+            PolarBearEntity.this.setWarning(false);
+         } else if (squaredDistance <= _snowman * 2.0) {
+            if (this.method_28347()) {
+               PolarBearEntity.this.setWarning(false);
+               this.method_28346();
+            }
+
+            if (this.method_28348() <= 10) {
+               PolarBearEntity.this.setWarning(true);
+               PolarBearEntity.this.playWarningSound();
+            }
+         } else {
+            this.method_28346();
+            PolarBearEntity.this.setWarning(false);
+         }
+      }
+
+      @Override
+      public void stop() {
+         PolarBearEntity.this.setWarning(false);
+         super.stop();
+      }
+
+      @Override
+      protected double getSquaredMaxAttackDistance(LivingEntity entity) {
+         return (double)(4.0F + entity.getWidth());
+      }
+   }
+
+   class FollowPlayersGoal extends FollowTargetGoal<PlayerEntity> {
+      public FollowPlayersGoal() {
+         super(PolarBearEntity.this, PlayerEntity.class, 20, true, true, null);
+      }
+
+      @Override
+      public boolean canStart() {
+         if (PolarBearEntity.this.isBaby()) {
+            return false;
+         } else {
+            if (super.canStart()) {
+               for (PolarBearEntity _snowman : PolarBearEntity.this.world
+                  .getNonSpectatingEntities(PolarBearEntity.class, PolarBearEntity.this.getBoundingBox().expand(8.0, 4.0, 8.0))) {
+                  if (_snowman.isBaby()) {
+                     return true;
+                  }
+               }
+            }
+
+            return false;
+         }
+      }
+
+      @Override
+      protected double getFollowRange() {
+         return super.getFollowRange() * 0.5;
+      }
+   }
+
+   class PolarBearEscapeDangerGoal extends EscapeDangerGoal {
+      public PolarBearEscapeDangerGoal() {
+         super(PolarBearEntity.this, 2.0);
+      }
+
+      @Override
+      public boolean canStart() {
+         return !PolarBearEntity.this.isBaby() && !PolarBearEntity.this.isOnFire() ? false : super.canStart();
+      }
+   }
+
+   class PolarBearRevengeGoal extends RevengeGoal {
+      public PolarBearRevengeGoal() {
+         super(PolarBearEntity.this);
+      }
+
+      @Override
+      public void start() {
+         super.start();
+         if (PolarBearEntity.this.isBaby()) {
+            this.callSameTypeForRevenge();
+            this.stop();
+         }
+      }
+
+      @Override
+      protected void setMobEntityTarget(MobEntity mob, LivingEntity target) {
+         if (mob instanceof PolarBearEntity && !mob.isBaby()) {
+            super.setMobEntityTarget(mob, target);
+         }
+      }
+   }
+}

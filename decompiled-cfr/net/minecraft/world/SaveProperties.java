@@ -1,0 +1,99 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.serialization.Lifecycle
+ *  javax.annotation.Nullable
+ */
+package net.minecraft.world;
+
+import com.mojang.serialization.Lifecycle;
+import java.util.Set;
+import javax.annotation.Nullable;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resource.DataPackSettings;
+import net.minecraft.util.crash.CrashReportSection;
+import net.minecraft.util.registry.DynamicRegistryManager;
+import net.minecraft.world.Difficulty;
+import net.minecraft.world.GameMode;
+import net.minecraft.world.GameRules;
+import net.minecraft.world.gen.GeneratorOptions;
+import net.minecraft.world.level.LevelInfo;
+import net.minecraft.world.level.ServerWorldProperties;
+
+public interface SaveProperties {
+    public DataPackSettings getDataPackSettings();
+
+    public void updateLevelInfo(DataPackSettings var1);
+
+    public boolean isModded();
+
+    public Set<String> getServerBrands();
+
+    public void addServerBrand(String var1, boolean var2);
+
+    default public void populateCrashReport(CrashReportSection reportSection) {
+        reportSection.add("Known server brands", () -> String.join((CharSequence)", ", this.getServerBrands()));
+        reportSection.add("Level was modded", () -> Boolean.toString(this.isModded()));
+        reportSection.add("Level storage version", () -> {
+            int n = this.getVersion();
+            return String.format("0x%05X - %s", n, this.getFormatName(n));
+        });
+    }
+
+    default public String getFormatName(int id) {
+        switch (id) {
+            case 19133: {
+                return "Anvil";
+            }
+            case 19132: {
+                return "McRegion";
+            }
+        }
+        return "Unknown?";
+    }
+
+    @Nullable
+    public CompoundTag getCustomBossEvents();
+
+    public void setCustomBossEvents(@Nullable CompoundTag var1);
+
+    public ServerWorldProperties getMainWorldProperties();
+
+    public LevelInfo getLevelInfo();
+
+    public CompoundTag cloneWorldTag(DynamicRegistryManager var1, @Nullable CompoundTag var2);
+
+    public boolean isHardcore();
+
+    public int getVersion();
+
+    public String getLevelName();
+
+    public GameMode getGameMode();
+
+    public void setGameMode(GameMode var1);
+
+    public boolean areCommandsAllowed();
+
+    public Difficulty getDifficulty();
+
+    public void setDifficulty(Difficulty var1);
+
+    public boolean isDifficultyLocked();
+
+    public void setDifficultyLocked(boolean var1);
+
+    public GameRules getGameRules();
+
+    public CompoundTag getPlayerData();
+
+    public CompoundTag getDragonFight();
+
+    public void setDragonFight(CompoundTag var1);
+
+    public GeneratorOptions getGeneratorOptions();
+
+    public Lifecycle getLifecycle();
+}
+

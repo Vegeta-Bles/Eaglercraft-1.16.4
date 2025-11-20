@@ -1,0 +1,47 @@
+package net.minecraft.client.realms.util;
+
+import com.google.gson.annotations.SerializedName;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.realms.CheckedGson;
+import net.minecraft.client.realms.RealmsSerializable;
+import org.apache.commons.io.FileUtils;
+
+public class RealmsPersistence {
+   private static final CheckedGson CHECKED_GSON = new CheckedGson();
+
+   public static RealmsPersistence.RealmsPersistenceData readFile() {
+      File _snowman = getFile();
+
+      try {
+         return CHECKED_GSON.fromJson(FileUtils.readFileToString(_snowman, StandardCharsets.UTF_8), RealmsPersistence.RealmsPersistenceData.class);
+      } catch (IOException var2) {
+         return new RealmsPersistence.RealmsPersistenceData();
+      }
+   }
+
+   public static void writeFile(RealmsPersistence.RealmsPersistenceData data) {
+      File _snowman = getFile();
+
+      try {
+         FileUtils.writeStringToFile(_snowman, CHECKED_GSON.toJson(data), StandardCharsets.UTF_8);
+      } catch (IOException var3) {
+      }
+   }
+
+   private static File getFile() {
+      return new File(MinecraftClient.getInstance().runDirectory, "realms_persistence.json");
+   }
+
+   public static class RealmsPersistenceData implements RealmsSerializable {
+      @SerializedName("newsLink")
+      public String newsLink;
+      @SerializedName("hasUnreadNews")
+      public boolean hasUnreadNews;
+
+      public RealmsPersistenceData() {
+      }
+   }
+}

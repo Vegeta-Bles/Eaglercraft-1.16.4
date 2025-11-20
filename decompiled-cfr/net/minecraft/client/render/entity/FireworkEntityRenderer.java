@@ -1,0 +1,47 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.entity;
+
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.item.ItemRenderer;
+import net.minecraft.client.render.model.json.ModelTransformation;
+import net.minecraft.client.texture.SpriteAtlasTexture;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.util.math.Vector3f;
+import net.minecraft.entity.projectile.FireworkRocketEntity;
+import net.minecraft.util.Identifier;
+
+public class FireworkEntityRenderer
+extends EntityRenderer<FireworkRocketEntity> {
+    private final ItemRenderer itemRenderer;
+
+    public FireworkEntityRenderer(EntityRenderDispatcher dispatcher, ItemRenderer itemRenderer) {
+        super(dispatcher);
+        this.itemRenderer = itemRenderer;
+    }
+
+    @Override
+    public void render(FireworkRocketEntity fireworkRocketEntity, float f, float f2, MatrixStack matrixStack, VertexConsumerProvider vertexConsumerProvider, int n) {
+        matrixStack.push();
+        matrixStack.multiply(this.dispatcher.getRotation());
+        matrixStack.multiply(Vector3f.POSITIVE_Y.getDegreesQuaternion(180.0f));
+        if (fireworkRocketEntity.wasShotAtAngle()) {
+            matrixStack.multiply(Vector3f.POSITIVE_Z.getDegreesQuaternion(180.0f));
+            matrixStack.multiply(Vector3f.POSITIVE_Y.getDegreesQuaternion(180.0f));
+            matrixStack.multiply(Vector3f.POSITIVE_X.getDegreesQuaternion(90.0f));
+        }
+        this.itemRenderer.renderItem(fireworkRocketEntity.getStack(), ModelTransformation.Mode.GROUND, n, OverlayTexture.DEFAULT_UV, matrixStack, vertexConsumerProvider);
+        matrixStack.pop();
+        super.render(fireworkRocketEntity, f, f2, matrixStack, vertexConsumerProvider, n);
+    }
+
+    @Override
+    public Identifier getTexture(FireworkRocketEntity fireworkRocketEntity) {
+        return SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE;
+    }
+}
+

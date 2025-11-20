@@ -1,0 +1,435 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.google.common.collect.ImmutableList
+ *  com.google.common.collect.ImmutableList$Builder
+ *  com.google.common.collect.ImmutableSet
+ *  com.google.common.collect.Maps
+ *  com.google.common.collect.Sets
+ *  com.mojang.datafixers.util.Pair
+ *  com.mojang.serialization.Codec
+ *  com.mojang.serialization.DataResult
+ *  com.mojang.serialization.Dynamic
+ *  com.mojang.serialization.DynamicOps
+ *  com.mojang.serialization.MapCodec
+ *  com.mojang.serialization.MapLike
+ *  com.mojang.serialization.RecordBuilder
+ *  it.unimi.dsi.fastutil.objects.ObjectArrayList
+ *  javax.annotation.Nullable
+ *  org.apache.commons.lang3.mutable.MutableObject
+ *  org.apache.logging.log4j.LogManager
+ *  org.apache.logging.log4j.Logger
+ */
+package net.minecraft.entity.ai.brain;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import com.mojang.datafixers.util.Pair;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.Dynamic;
+import com.mojang.serialization.DynamicOps;
+import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.MapLike;
+import com.mojang.serialization.RecordBuilder;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.ai.brain.Activity;
+import net.minecraft.entity.ai.brain.Memory;
+import net.minecraft.entity.ai.brain.MemoryModuleState;
+import net.minecraft.entity.ai.brain.MemoryModuleType;
+import net.minecraft.entity.ai.brain.Schedule;
+import net.minecraft.entity.ai.brain.sensor.Sensor;
+import net.minecraft.entity.ai.brain.sensor.SensorType;
+import net.minecraft.entity.ai.brain.task.Task;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.Util;
+import net.minecraft.util.registry.Registry;
+import org.apache.commons.lang3.mutable.MutableObject;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class Brain<E extends LivingEntity> {
+    private static final Logger LOGGER = LogManager.getLogger();
+    private final Supplier<Codec<Brain<E>>> codecSupplier;
+    private final Map<MemoryModuleType<?>, Optional<? extends Memory<?>>> memories = Maps.newHashMap();
+    private final Map<SensorType<? extends Sensor<? super E>>, Sensor<? super E>> sensors = Maps.newLinkedHashMap();
+    private final Map<Integer, Map<Activity, Set<Task<? super E>>>> tasks = Maps.newTreeMap();
+    private Schedule schedule = Schedule.EMPTY;
+    private final Map<Activity, Set<Pair<MemoryModuleType<?>, MemoryModuleState>>> requiredActivityMemories = Maps.newHashMap();
+    private final Map<Activity, Set<MemoryModuleType<?>>> forgettingActivityMemories = Maps.newHashMap();
+    private Set<Activity> coreActivities = Sets.newHashSet();
+    private final Set<Activity> possibleActivities = Sets.newHashSet();
+    private Activity defaultActivity = Activity.IDLE;
+    private long activityStartTime = -9999L;
+
+    public static <E extends LivingEntity> Profile<E> createProfile(Collection<? extends MemoryModuleType<?>> memoryModules, Collection<? extends SensorType<? extends Sensor<? super E>>> sensors) {
+        return new Profile(memoryModules, sensors);
+    }
+
+    public static <E extends LivingEntity> Codec<Brain<E>> createBrainCodec(final Collection<? extends MemoryModuleType<?>> memoryModules, final Collection<? extends SensorType<? extends Sensor<? super E>>> sensors) {
+        final MutableObject mutableObject = new MutableObject();
+        mutableObject.setValue((Object)new MapCodec<Brain<E>>(){
+
+            public <T> Stream<T> keys(DynamicOps<T> dynamicOps) {
+                return memoryModules.stream().flatMap(memoryModuleType -> Util.stream(memoryModuleType.getCodec().map(codec -> Registry.MEMORY_MODULE_TYPE.getId((MemoryModuleType<?>)memoryModuleType)))).map(identifier -> dynamicOps.createString(identifier.toString()));
+            }
+
+            public <T> DataResult<Brain<E>> decode(DynamicOps<T> dynamicOps, MapLike<T> mapLike) {
+                MutableObject mutableObject2 = new MutableObject((Object)DataResult.success((Object)ImmutableList.builder()));
+                mapLike.entries().forEach(pair -> {
+                    DataResult dataResult = Registry.MEMORY_MODULE_TYPE.parse(dynamicOps, pair.getFirst());
+                    _snowman = dataResult.flatMap(memoryModuleType -> this.method_28320((MemoryModuleType)memoryModuleType, dynamicOps, (Object)pair.getSecond()));
+                    mutableObject2.setValue((Object)((DataResult)mutableObject2.getValue()).apply2(ImmutableList.Builder::add, _snowman));
+                });
+                ImmutableList _snowman2 = ((DataResult)mutableObject2.getValue()).resultOrPartial(arg_0 -> ((Logger)LOGGER).error(arg_0)).map(ImmutableList.Builder::build).orElseGet(ImmutableList::of);
+                return DataResult.success(new Brain(memoryModules, sensors, _snowman2, () -> ((MutableObject)mutableObject).getValue()));
+            }
+
+            private <T, U> DataResult<MemoryEntry<U>> method_28320(MemoryModuleType<U> memoryModuleType, DynamicOps<T> dynamicOps, T t) {
+                return memoryModuleType.getCodec().map(DataResult::success).orElseGet(() -> DataResult.error((String)("No codec for memory: " + memoryModuleType))).flatMap(codec -> codec.parse(dynamicOps, t)).map(memory -> new MemoryEntry(memoryModuleType, Optional.of(memory)));
+            }
+
+            public <T> RecordBuilder<T> encode(Brain<E> brain, DynamicOps<T> dynamicOps, RecordBuilder<T> recordBuilder) {
+                brain.streamMemories().forEach(memoryEntry -> memoryEntry.serialize(dynamicOps, recordBuilder));
+                return recordBuilder;
+            }
+
+            public /* synthetic */ RecordBuilder encode(Object object, DynamicOps dynamicOps, RecordBuilder recordBuilder) {
+                return this.encode((Brain)object, dynamicOps, recordBuilder);
+            }
+        }.fieldOf("memories").codec());
+        return (Codec)mutableObject.getValue();
+    }
+
+    public Brain(Collection<? extends MemoryModuleType<?>> memories, Collection<? extends SensorType<? extends Sensor<? super E>>> sensors, ImmutableList<MemoryEntry<?>> memoryEntries, Supplier<Codec<Brain<E>>> codecSupplier) {
+        this.codecSupplier = codecSupplier;
+        for (MemoryModuleType<?> memoryModuleType : memories) {
+            this.memories.put(memoryModuleType, Optional.empty());
+        }
+        for (SensorType sensorType : sensors) {
+            this.sensors.put(sensorType, (Sensor<E>)sensorType.create());
+        }
+        for (Sensor sensor : this.sensors.values()) {
+            for (MemoryModuleType<?> memoryModuleType : sensor.getOutputMemoryModules()) {
+                this.memories.put(memoryModuleType, Optional.empty());
+            }
+        }
+        for (MemoryEntry memoryEntry : memoryEntries) {
+            memoryEntry.apply(this);
+        }
+    }
+
+    public <T> DataResult<T> encode(DynamicOps<T> ops) {
+        return this.codecSupplier.get().encodeStart(ops, (Object)this);
+    }
+
+    private Stream<MemoryEntry<?>> streamMemories() {
+        return this.memories.entrySet().stream().map(entry -> MemoryEntry.of((MemoryModuleType)entry.getKey(), (Optional)entry.getValue()));
+    }
+
+    public boolean hasMemoryModule(MemoryModuleType<?> type) {
+        return this.isMemoryInState(type, MemoryModuleState.VALUE_PRESENT);
+    }
+
+    public <U> void forget(MemoryModuleType<U> type) {
+        this.remember(type, Optional.empty());
+    }
+
+    public <U> void remember(MemoryModuleType<U> type, @Nullable U value) {
+        this.remember(type, Optional.ofNullable(value));
+    }
+
+    public <U> void remember(MemoryModuleType<U> type, U value, long startTime) {
+        this.setMemory(type, Optional.of(Memory.timed(value, startTime)));
+    }
+
+    public <U> void remember(MemoryModuleType<U> type, Optional<? extends U> value) {
+        this.setMemory(type, value.map(Memory::method_28355));
+    }
+
+    private <U> void setMemory(MemoryModuleType<U> type, Optional<? extends Memory<?>> memory) {
+        if (this.memories.containsKey(type)) {
+            if (memory.isPresent() && this.isEmptyCollection(memory.get().getValue())) {
+                this.forget(type);
+            } else {
+                this.memories.put(type, memory);
+            }
+        }
+    }
+
+    public <U> Optional<U> getOptionalMemory(MemoryModuleType<U> type) {
+        return this.memories.get(type).map(Memory::getValue);
+    }
+
+    public <U> boolean method_29519(MemoryModuleType<U> memoryModuleType, U u) {
+        if (!this.hasMemoryModule(memoryModuleType)) {
+            return false;
+        }
+        return this.getOptionalMemory(memoryModuleType).filter(object2 -> object2.equals(u)).isPresent();
+    }
+
+    public boolean isMemoryInState(MemoryModuleType<?> type, MemoryModuleState state) {
+        Optional<Memory<?>> optional = this.memories.get(type);
+        if (optional == null) {
+            return false;
+        }
+        return state == MemoryModuleState.REGISTERED || state == MemoryModuleState.VALUE_PRESENT && optional.isPresent() || state == MemoryModuleState.VALUE_ABSENT && !optional.isPresent();
+    }
+
+    public Schedule getSchedule() {
+        return this.schedule;
+    }
+
+    public void setSchedule(Schedule schedule) {
+        this.schedule = schedule;
+    }
+
+    public void setCoreActivities(Set<Activity> coreActivities) {
+        this.coreActivities = coreActivities;
+    }
+
+    @Deprecated
+    public List<Task<? super E>> getRunningTasks() {
+        ObjectArrayList objectArrayList = new ObjectArrayList();
+        for (Map<Activity, Set<Task<E>>> map : this.tasks.values()) {
+            for (Set<Task<E>> set : map.values()) {
+                for (Task<E> task : set) {
+                    if (task.getStatus() != Task.Status.RUNNING) continue;
+                    objectArrayList.add(task);
+                }
+            }
+        }
+        return objectArrayList;
+    }
+
+    public void resetPossibleActivities() {
+        this.resetPossibleActivities(this.defaultActivity);
+    }
+
+    public Optional<Activity> getFirstPossibleNonCoreActivity() {
+        for (Activity activity : this.possibleActivities) {
+            if (this.coreActivities.contains(activity)) continue;
+            return Optional.of(activity);
+        }
+        return Optional.empty();
+    }
+
+    public void doExclusively(Activity activity) {
+        if (this.canDoActivity(activity)) {
+            this.resetPossibleActivities(activity);
+        } else {
+            this.resetPossibleActivities();
+        }
+    }
+
+    private void resetPossibleActivities(Activity except) {
+        if (this.hasActivity(except)) {
+            return;
+        }
+        this.forgetIrrelevantMemories(except);
+        this.possibleActivities.clear();
+        this.possibleActivities.addAll(this.coreActivities);
+        this.possibleActivities.add(except);
+    }
+
+    private void forgetIrrelevantMemories(Activity except) {
+        for (Activity activity : this.possibleActivities) {
+            if (activity == except || (_snowman = this.forgettingActivityMemories.get(activity)) == null) continue;
+            for (MemoryModuleType<?> memoryModuleType : _snowman) {
+                this.forget(memoryModuleType);
+            }
+        }
+    }
+
+    public void refreshActivities(long timeOfDay, long time) {
+        if (time - this.activityStartTime > 20L) {
+            this.activityStartTime = time;
+            Activity activity = this.getSchedule().getActivityForTime((int)(timeOfDay % 24000L));
+            if (!this.possibleActivities.contains(activity)) {
+                this.doExclusively(activity);
+            }
+        }
+    }
+
+    public void resetPossibleActivities(List<Activity> list) {
+        for (Activity activity : list) {
+            if (!this.canDoActivity(activity)) continue;
+            this.resetPossibleActivities(activity);
+            break;
+        }
+    }
+
+    public void setDefaultActivity(Activity activity) {
+        this.defaultActivity = activity;
+    }
+
+    public void setTaskList(Activity activity, int begin, ImmutableList<? extends Task<? super E>> list) {
+        this.setTaskList(activity, this.indexTaskList(begin, list));
+    }
+
+    public void setTaskList(Activity activity, int begin, ImmutableList<? extends Task<? super E>> tasks, MemoryModuleType<?> memoryType) {
+        ImmutableSet immutableSet = ImmutableSet.of((Object)Pair.of(memoryType, (Object)((Object)MemoryModuleState.VALUE_PRESENT)));
+        _snowman = ImmutableSet.of(memoryType);
+        this.setTaskList(activity, (ImmutableList<? extends Pair<Integer, ? extends Task<? super E>>>)this.indexTaskList(begin, tasks), (Set<Pair<MemoryModuleType<?>, MemoryModuleState>>)immutableSet, (Set<MemoryModuleType<?>>)_snowman);
+    }
+
+    public void setTaskList(Activity activity, ImmutableList<? extends Pair<Integer, ? extends Task<? super E>>> indexedTasks) {
+        this.setTaskList(activity, indexedTasks, (Set<Pair<MemoryModuleType<?>, MemoryModuleState>>)ImmutableSet.of(), Sets.newHashSet());
+    }
+
+    public void setTaskList(Activity activity, ImmutableList<? extends Pair<Integer, ? extends Task<? super E>>> indexedTasks, Set<Pair<MemoryModuleType<?>, MemoryModuleState>> requiredMemories) {
+        this.setTaskList(activity, indexedTasks, requiredMemories, Sets.newHashSet());
+    }
+
+    private void setTaskList(Activity activity2, ImmutableList<? extends Pair<Integer, ? extends Task<? super E>>> indexedTasks, Set<Pair<MemoryModuleType<?>, MemoryModuleState>> requiredMemories, Set<MemoryModuleType<?>> forgettingMemories) {
+        this.requiredActivityMemories.put(activity2, requiredMemories);
+        if (!forgettingMemories.isEmpty()) {
+            this.forgettingActivityMemories.put(activity2, forgettingMemories);
+        }
+        for (Pair pair : indexedTasks) {
+            this.tasks.computeIfAbsent((Integer)pair.getFirst(), n -> Maps.newHashMap()).computeIfAbsent(activity2, activity -> Sets.newLinkedHashSet()).add(pair.getSecond());
+        }
+    }
+
+    public boolean hasActivity(Activity activity) {
+        return this.possibleActivities.contains(activity);
+    }
+
+    public Brain<E> copy() {
+        Brain<E> brain = new Brain<E>(this.memories.keySet(), this.sensors.keySet(), ImmutableList.of(), this.codecSupplier);
+        for (Map.Entry<MemoryModuleType<?>, Optional<Memory<?>>> entry : this.memories.entrySet()) {
+            MemoryModuleType<?> memoryModuleType = entry.getKey();
+            if (!entry.getValue().isPresent()) continue;
+            brain.memories.put(memoryModuleType, entry.getValue());
+        }
+        return brain;
+    }
+
+    public void tick(ServerWorld world, E entity) {
+        this.tickMemories();
+        this.tickSensors(world, entity);
+        this.startTasks(world, entity);
+        this.updateTasks(world, entity);
+    }
+
+    private void tickSensors(ServerWorld world, E entity) {
+        for (Sensor<E> sensor : this.sensors.values()) {
+            sensor.tick(world, entity);
+        }
+    }
+
+    private void tickMemories() {
+        for (Map.Entry<MemoryModuleType<?>, Optional<Memory<?>>> entry : this.memories.entrySet()) {
+            if (!entry.getValue().isPresent()) continue;
+            Memory<?> memory = entry.getValue().get();
+            memory.tick();
+            if (!memory.isExpired()) continue;
+            this.forget(entry.getKey());
+        }
+    }
+
+    public void stopAllTasks(ServerWorld world, E entity) {
+        long l = ((LivingEntity)entity).world.getTime();
+        for (Task<E> task : this.getRunningTasks()) {
+            task.stop(world, entity, l);
+        }
+    }
+
+    private void startTasks(ServerWorld world, E entity) {
+        long l = world.getTime();
+        for (Map<Activity, Set<Task<E>>> map : this.tasks.values()) {
+            for (Map.Entry<Activity, Set<Task<E>>> entry : map.entrySet()) {
+                Activity activity = entry.getKey();
+                if (!this.possibleActivities.contains(activity)) continue;
+                Set<Task<E>> _snowman2 = entry.getValue();
+                for (Task<E> task : _snowman2) {
+                    if (task.getStatus() != Task.Status.STOPPED) continue;
+                    task.tryStarting(world, entity, l);
+                }
+            }
+        }
+    }
+
+    private void updateTasks(ServerWorld world, E entity) {
+        long l = world.getTime();
+        for (Task<E> task : this.getRunningTasks()) {
+            task.tick(world, entity, l);
+        }
+    }
+
+    private boolean canDoActivity(Activity activity) {
+        if (!this.requiredActivityMemories.containsKey(activity)) {
+            return false;
+        }
+        for (Pair<MemoryModuleType<?>, MemoryModuleState> pair : this.requiredActivityMemories.get(activity)) {
+            MemoryModuleType memoryModuleType = (MemoryModuleType)pair.getFirst();
+            if (this.isMemoryInState(memoryModuleType, _snowman = (MemoryModuleState)((Object)pair.getSecond()))) continue;
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isEmptyCollection(Object value) {
+        return value instanceof Collection && ((Collection)value).isEmpty();
+    }
+
+    ImmutableList<? extends Pair<Integer, ? extends Task<? super E>>> indexTaskList(int begin, ImmutableList<? extends Task<? super E>> tasks) {
+        int n = begin;
+        ImmutableList.Builder _snowman2 = ImmutableList.builder();
+        for (Task task : tasks) {
+            _snowman2.add((Object)Pair.of((Object)n++, (Object)task));
+        }
+        return _snowman2.build();
+    }
+
+    static final class MemoryEntry<U> {
+        private final MemoryModuleType<U> type;
+        private final Optional<? extends Memory<U>> data;
+
+        private static <U> MemoryEntry<U> of(MemoryModuleType<U> type, Optional<? extends Memory<?>> data) {
+            return new MemoryEntry<U>(type, data);
+        }
+
+        private MemoryEntry(MemoryModuleType<U> type, Optional<? extends Memory<U>> data) {
+            this.type = type;
+            this.data = data;
+        }
+
+        private void apply(Brain<?> brain) {
+            ((Brain)brain).setMemory(this.type, this.data);
+        }
+
+        public <T> void serialize(DynamicOps<T> ops, RecordBuilder<T> builder) {
+            this.type.getCodec().ifPresent(codec -> this.data.ifPresent(memory -> builder.add(Registry.MEMORY_MODULE_TYPE.encodeStart(ops, this.type), codec.encodeStart(ops, memory))));
+        }
+    }
+
+    public static final class Profile<E extends LivingEntity> {
+        private final Collection<? extends MemoryModuleType<?>> memoryModules;
+        private final Collection<? extends SensorType<? extends Sensor<? super E>>> sensors;
+        private final Codec<Brain<E>> codec;
+
+        private Profile(Collection<? extends MemoryModuleType<?>> memoryModules, Collection<? extends SensorType<? extends Sensor<? super E>>> sensors) {
+            this.memoryModules = memoryModules;
+            this.sensors = sensors;
+            this.codec = Brain.createBrainCodec(memoryModules, sensors);
+        }
+
+        public Brain<E> deserialize(Dynamic<?> data) {
+            return this.codec.parse(data).resultOrPartial(arg_0 -> ((Logger)LOGGER).error(arg_0)).orElseGet(() -> new Brain(this.memoryModules, this.sensors, ImmutableList.of(), () -> this.codec));
+        }
+    }
+}
+

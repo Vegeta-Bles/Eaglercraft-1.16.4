@@ -1,0 +1,529 @@
+package net.minecraft.client.gui.screen;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.mojang.blaze3d.systems.RenderSystem;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import it.unimi.dsi.fastutil.objects.ObjectListIterator;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import javax.annotation.Nullable;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.block.Block;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawableHelper;
+import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.resource.language.I18n;
+import net.minecraft.client.sound.PositionedSoundInstance;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.EntityType;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.ClientStatusC2SPacket;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.stat.Stat;
+import net.minecraft.stat.StatHandler;
+import net.minecraft.stat.StatType;
+import net.minecraft.stat.Stats;
+import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
+import net.minecraft.util.registry.Registry;
+
+@Environment(EnvType.CLIENT)
+public class StatsScreen extends Screen implements StatsListener {
+   private static final Text field_26546 = new TranslatableText("multiplayer.downloadingStats");
+   protected final Screen parent;
+   private StatsScreen.GeneralStatsListWidget generalStats;
+   private StatsScreen.ItemStatsListWidget itemStats;
+   private StatsScreen.EntityStatsListWidget mobStats;
+   private final StatHandler statHandler;
+   @Nullable
+   private AlwaysSelectedEntryListWidget<?> selectedList;
+   private boolean downloadingStats = true;
+
+   public StatsScreen(Screen parent, StatHandler statHandler) {
+      super(new TranslatableText("gui.stats"));
+      this.parent = parent;
+      this.statHandler = statHandler;
+   }
+
+   @Override
+   protected void init() {
+      this.downloadingStats = true;
+      this.client.getNetworkHandler().sendPacket(new ClientStatusC2SPacket(ClientStatusC2SPacket.Mode.REQUEST_STATS));
+   }
+
+   public void createLists() {
+      this.generalStats = new StatsScreen.GeneralStatsListWidget(this.client);
+      this.itemStats = new StatsScreen.ItemStatsListWidget(this.client);
+      this.mobStats = new StatsScreen.EntityStatsListWidget(this.client);
+   }
+
+   public void createButtons() {
+      this.addButton(
+         new ButtonWidget(
+            this.width / 2 - 120, this.height - 52, 80, 20, new TranslatableText("stat.generalButton"), arg -> this.selectStatList(this.generalStats)
+         )
+      );
+      ButtonWidget lv = this.addButton(
+         new ButtonWidget(this.width / 2 - 40, this.height - 52, 80, 20, new TranslatableText("stat.itemsButton"), arg -> this.selectStatList(this.itemStats))
+      );
+      ButtonWidget lv2 = this.addButton(
+         new ButtonWidget(this.width / 2 + 40, this.height - 52, 80, 20, new TranslatableText("stat.mobsButton"), arg -> this.selectStatList(this.mobStats))
+      );
+      this.addButton(new ButtonWidget(this.width / 2 - 100, this.height - 28, 200, 20, ScreenTexts.DONE, arg -> this.client.openScreen(this.parent)));
+      if (this.itemStats.children().isEmpty()) {
+         lv.active = false;
+      }
+
+      if (this.mobStats.children().isEmpty()) {
+         lv2.active = false;
+      }
+   }
+
+   @Override
+   public void render(MatrixStack matrices, int mouseX, int mouseY, float delta) {
+      if (this.downloadingStats) {
+         this.renderBackground(matrices);
+         drawCenteredText(matrices, this.textRenderer, field_26546, this.width / 2, this.height / 2, 16777215);
+         drawCenteredString(
+            matrices,
+            this.textRenderer,
+            PROGRESS_BAR_STAGES[(int)(Util.getMeasuringTimeMs() / 150L % (long)PROGRESS_BAR_STAGES.length)],
+            this.width / 2,
+            this.height / 2 + 9 * 2,
+            16777215
+         );
+      } else {
+         this.getSelectedStatList().render(matrices, mouseX, mouseY, delta);
+         drawCenteredText(matrices, this.textRenderer, this.title, this.width / 2, 20, 16777215);
+         super.render(matrices, mouseX, mouseY, delta);
+      }
+   }
+
+   @Override
+   public void onStatsReady() {
+      if (this.downloadingStats) {
+         this.createLists();
+         this.createButtons();
+         this.selectStatList(this.generalStats);
+         this.downloadingStats = false;
+      }
+   }
+
+   @Override
+   public boolean isPauseScreen() {
+      return !this.downloadingStats;
+   }
+
+   @Nullable
+   public AlwaysSelectedEntryListWidget<?> getSelectedStatList() {
+      return this.selectedList;
+   }
+
+   public void selectStatList(@Nullable AlwaysSelectedEntryListWidget<?> list) {
+      this.children.remove(this.generalStats);
+      this.children.remove(this.itemStats);
+      this.children.remove(this.mobStats);
+      if (list != null) {
+         this.children.add(0, list);
+         this.selectedList = list;
+      }
+   }
+
+   private static String method_27027(Stat<Identifier> arg) {
+      return "stat." + arg.getValue().toString().replace(':', '.');
+   }
+
+   private int getColumnX(int index) {
+      return 115 + 40 * index;
+   }
+
+   private void renderStatItem(MatrixStack arg, int i, int j, Item arg2) {
+      this.renderIcon(arg, i + 1, j + 1, 0, 0);
+      RenderSystem.enableRescaleNormal();
+      this.itemRenderer.renderGuiItemIcon(arg2.getDefaultStack(), i + 2, j + 2);
+      RenderSystem.disableRescaleNormal();
+   }
+
+   private void renderIcon(MatrixStack arg, int i, int j, int k, int l) {
+      RenderSystem.color4f(1.0F, 1.0F, 1.0F, 1.0F);
+      this.client.getTextureManager().bindTexture(STATS_ICON_TEXTURE);
+      drawTexture(arg, i, j, this.getZOffset(), (float)k, (float)l, 18, 18, 128, 128);
+   }
+
+   @Environment(EnvType.CLIENT)
+   class EntityStatsListWidget extends AlwaysSelectedEntryListWidget<StatsScreen.EntityStatsListWidget.Entry> {
+      public EntityStatsListWidget(MinecraftClient arg2) {
+         super(arg2, StatsScreen.this.width, StatsScreen.this.height, 32, StatsScreen.this.height - 64, 9 * 4);
+
+         for (EntityType<?> lv : Registry.ENTITY_TYPE) {
+            if (StatsScreen.this.statHandler.getStat(Stats.KILLED.getOrCreateStat(lv)) > 0
+               || StatsScreen.this.statHandler.getStat(Stats.KILLED_BY.getOrCreateStat(lv)) > 0) {
+               this.addEntry(new StatsScreen.EntityStatsListWidget.Entry(lv));
+            }
+         }
+      }
+
+      @Override
+      protected void renderBackground(MatrixStack matrices) {
+         StatsScreen.this.renderBackground(matrices);
+      }
+
+      @Environment(EnvType.CLIENT)
+      class Entry extends AlwaysSelectedEntryListWidget.Entry<StatsScreen.EntityStatsListWidget.Entry> {
+         private final EntityType<?> entityType;
+         private final Text field_26548;
+         private final Text field_26549;
+         private final boolean field_26550;
+         private final Text field_26551;
+         private final boolean field_26552;
+
+         public Entry(EntityType<?> arg2) {
+            this.entityType = arg2;
+            this.field_26548 = arg2.getName();
+            int i = StatsScreen.this.statHandler.getStat(Stats.KILLED.getOrCreateStat(arg2));
+            if (i == 0) {
+               this.field_26549 = new TranslatableText("stat_type.minecraft.killed.none", this.field_26548);
+               this.field_26550 = false;
+            } else {
+               this.field_26549 = new TranslatableText("stat_type.minecraft.killed", i, this.field_26548);
+               this.field_26550 = true;
+            }
+
+            int j = StatsScreen.this.statHandler.getStat(Stats.KILLED_BY.getOrCreateStat(arg2));
+            if (j == 0) {
+               this.field_26551 = new TranslatableText("stat_type.minecraft.killed_by.none", this.field_26548);
+               this.field_26552 = false;
+            } else {
+               this.field_26551 = new TranslatableText("stat_type.minecraft.killed_by", this.field_26548, j);
+               this.field_26552 = true;
+            }
+         }
+
+         @Override
+         public void render(
+            MatrixStack matrices, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta
+         ) {
+            DrawableHelper.drawTextWithShadow(matrices, StatsScreen.this.textRenderer, this.field_26548, x + 2, y + 1, 16777215);
+            DrawableHelper.drawTextWithShadow(
+               matrices, StatsScreen.this.textRenderer, this.field_26549, x + 2 + 10, y + 1 + 9, this.field_26550 ? 9474192 : 6316128
+            );
+            DrawableHelper.drawTextWithShadow(
+               matrices, StatsScreen.this.textRenderer, this.field_26551, x + 2 + 10, y + 1 + 9 * 2, this.field_26552 ? 9474192 : 6316128
+            );
+         }
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   class GeneralStatsListWidget extends AlwaysSelectedEntryListWidget<StatsScreen.GeneralStatsListWidget.Entry> {
+      public GeneralStatsListWidget(MinecraftClient arg2) {
+         super(arg2, StatsScreen.this.width, StatsScreen.this.height, 32, StatsScreen.this.height - 64, 10);
+         ObjectArrayList<Stat<Identifier>> objectArrayList = new ObjectArrayList(Stats.CUSTOM.iterator());
+         objectArrayList.sort(Comparator.comparing(argx -> I18n.translate(StatsScreen.method_27027(argx))));
+         ObjectListIterator var4 = objectArrayList.iterator();
+
+         while (var4.hasNext()) {
+            Stat<Identifier> lv = (Stat<Identifier>)var4.next();
+            this.addEntry(new StatsScreen.GeneralStatsListWidget.Entry(lv));
+         }
+      }
+
+      @Override
+      protected void renderBackground(MatrixStack matrices) {
+         StatsScreen.this.renderBackground(matrices);
+      }
+
+      @Environment(EnvType.CLIENT)
+      class Entry extends AlwaysSelectedEntryListWidget.Entry<StatsScreen.GeneralStatsListWidget.Entry> {
+         private final Stat<Identifier> stat;
+         private final Text field_26547;
+
+         private Entry(Stat<Identifier> stat) {
+            this.stat = stat;
+            this.field_26547 = new TranslatableText(StatsScreen.method_27027(stat));
+         }
+
+         @Override
+         public void render(
+            MatrixStack matrices, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta
+         ) {
+            DrawableHelper.drawTextWithShadow(matrices, StatsScreen.this.textRenderer, this.field_26547, x + 2, y + 1, index % 2 == 0 ? 16777215 : 9474192);
+            String string = this.stat.format(StatsScreen.this.statHandler.getStat(this.stat));
+            DrawableHelper.drawStringWithShadow(
+               matrices,
+               StatsScreen.this.textRenderer,
+               string,
+               x + 2 + 213 - StatsScreen.this.textRenderer.getWidth(string),
+               y + 1,
+               index % 2 == 0 ? 16777215 : 9474192
+            );
+         }
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   class ItemStatsListWidget extends AlwaysSelectedEntryListWidget<StatsScreen.ItemStatsListWidget.Entry> {
+      protected final List<StatType<Block>> blockStatTypes;
+      protected final List<StatType<Item>> itemStatTypes;
+      private final int[] HEADER_ICON_SPRITE_INDICES = new int[]{3, 4, 1, 2, 5, 6};
+      protected int selectedHeaderColumn = -1;
+      protected final List<Item> items;
+      protected final Comparator<Item> comparator = new StatsScreen.ItemStatsListWidget.ItemComparator();
+      @Nullable
+      protected StatType<?> selectedStatType;
+      protected int field_18760;
+
+      public ItemStatsListWidget(MinecraftClient client) {
+         super(client, StatsScreen.this.width, StatsScreen.this.height, 32, StatsScreen.this.height - 64, 20);
+         this.blockStatTypes = Lists.newArrayList();
+         this.blockStatTypes.add(Stats.MINED);
+         this.itemStatTypes = Lists.newArrayList(new StatType[]{Stats.BROKEN, Stats.CRAFTED, Stats.USED, Stats.PICKED_UP, Stats.DROPPED});
+         this.setRenderHeader(true, 20);
+         Set<Item> set = Sets.newIdentityHashSet();
+
+         for (Item lv : Registry.ITEM) {
+            boolean bl = false;
+
+            for (StatType<Item> lv2 : this.itemStatTypes) {
+               if (lv2.hasStat(lv) && StatsScreen.this.statHandler.getStat(lv2.getOrCreateStat(lv)) > 0) {
+                  bl = true;
+               }
+            }
+
+            if (bl) {
+               set.add(lv);
+            }
+         }
+
+         for (Block lv3 : Registry.BLOCK) {
+            boolean bl2 = false;
+
+            for (StatType<Block> lv4 : this.blockStatTypes) {
+               if (lv4.hasStat(lv3) && StatsScreen.this.statHandler.getStat(lv4.getOrCreateStat(lv3)) > 0) {
+                  bl2 = true;
+               }
+            }
+
+            if (bl2) {
+               set.add(lv3.asItem());
+            }
+         }
+
+         set.remove(Items.AIR);
+         this.items = Lists.newArrayList(set);
+
+         for (int i = 0; i < this.items.size(); i++) {
+            this.addEntry(new StatsScreen.ItemStatsListWidget.Entry());
+         }
+      }
+
+      @Override
+      protected void renderHeader(MatrixStack matrices, int x, int y, Tessellator arg2) {
+         if (!this.client.mouse.wasLeftButtonClicked()) {
+            this.selectedHeaderColumn = -1;
+         }
+
+         for (int k = 0; k < this.HEADER_ICON_SPRITE_INDICES.length; k++) {
+            StatsScreen.this.renderIcon(matrices, x + StatsScreen.this.getColumnX(k) - 18, y + 1, 0, this.selectedHeaderColumn == k ? 0 : 18);
+         }
+
+         if (this.selectedStatType != null) {
+            int l = StatsScreen.this.getColumnX(this.getHeaderIndex(this.selectedStatType)) - 36;
+            int m = this.field_18760 == 1 ? 2 : 1;
+            StatsScreen.this.renderIcon(matrices, x + l, y + 1, 18 * m, 0);
+         }
+
+         for (int n = 0; n < this.HEADER_ICON_SPRITE_INDICES.length; n++) {
+            int o = this.selectedHeaderColumn == n ? 1 : 0;
+            StatsScreen.this.renderIcon(matrices, x + StatsScreen.this.getColumnX(n) - 18 + o, y + 1 + o, 18 * this.HEADER_ICON_SPRITE_INDICES[n], 18);
+         }
+      }
+
+      @Override
+      public int getRowWidth() {
+         return 375;
+      }
+
+      @Override
+      protected int getScrollbarPositionX() {
+         return this.width / 2 + 140;
+      }
+
+      @Override
+      protected void renderBackground(MatrixStack matrices) {
+         StatsScreen.this.renderBackground(matrices);
+      }
+
+      @Override
+      protected void clickedHeader(int x, int y) {
+         this.selectedHeaderColumn = -1;
+
+         for (int k = 0; k < this.HEADER_ICON_SPRITE_INDICES.length; k++) {
+            int l = x - StatsScreen.this.getColumnX(k);
+            if (l >= -36 && l <= 0) {
+               this.selectedHeaderColumn = k;
+               break;
+            }
+         }
+
+         if (this.selectedHeaderColumn >= 0) {
+            this.selectStatType(this.getStatType(this.selectedHeaderColumn));
+            this.client.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+         }
+      }
+
+      private StatType<?> getStatType(int headerColumn) {
+         return headerColumn < this.blockStatTypes.size()
+            ? this.blockStatTypes.get(headerColumn)
+            : this.itemStatTypes.get(headerColumn - this.blockStatTypes.size());
+      }
+
+      private int getHeaderIndex(StatType<?> statType) {
+         int i = this.blockStatTypes.indexOf(statType);
+         if (i >= 0) {
+            return i;
+         } else {
+            int j = this.itemStatTypes.indexOf(statType);
+            return j >= 0 ? j + this.blockStatTypes.size() : -1;
+         }
+      }
+
+      @Override
+      protected void renderDecorations(MatrixStack arg, int i, int j) {
+         if (j >= this.top && j <= this.bottom) {
+            StatsScreen.ItemStatsListWidget.Entry lv = this.getEntryAtPosition((double)i, (double)j);
+            int k = (this.width - this.getRowWidth()) / 2;
+            if (lv != null) {
+               if (i < k + 40 || i > k + 40 + 20) {
+                  return;
+               }
+
+               Item lv2 = this.items.get(this.children().indexOf(lv));
+               this.render(arg, this.getText(lv2), i, j);
+            } else {
+               Text lv3 = null;
+               int l = i - k;
+
+               for (int m = 0; m < this.HEADER_ICON_SPRITE_INDICES.length; m++) {
+                  int n = StatsScreen.this.getColumnX(m);
+                  if (l >= n - 18 && l <= n) {
+                     lv3 = this.getStatType(m).method_30739();
+                     break;
+                  }
+               }
+
+               this.render(arg, lv3, i, j);
+            }
+         }
+      }
+
+      protected void render(MatrixStack arg, @Nullable Text arg2, int i, int j) {
+         if (arg2 != null) {
+            int k = i + 12;
+            int l = j - 12;
+            int m = StatsScreen.this.textRenderer.getWidth(arg2);
+            this.fillGradient(arg, k - 3, l - 3, k + m + 3, l + 8 + 3, -1073741824, -1073741824);
+            RenderSystem.pushMatrix();
+            RenderSystem.translatef(0.0F, 0.0F, 400.0F);
+            StatsScreen.this.textRenderer.drawWithShadow(arg, arg2, (float)k, (float)l, -1);
+            RenderSystem.popMatrix();
+         }
+      }
+
+      protected Text getText(Item item) {
+         return item.getName();
+      }
+
+      protected void selectStatType(StatType<?> statType) {
+         if (statType != this.selectedStatType) {
+            this.selectedStatType = statType;
+            this.field_18760 = -1;
+         } else if (this.field_18760 == -1) {
+            this.field_18760 = 1;
+         } else {
+            this.selectedStatType = null;
+            this.field_18760 = 0;
+         }
+
+         this.items.sort(this.comparator);
+      }
+
+      @Environment(EnvType.CLIENT)
+      class Entry extends AlwaysSelectedEntryListWidget.Entry<StatsScreen.ItemStatsListWidget.Entry> {
+         private Entry() {
+         }
+
+         @Override
+         public void render(
+            MatrixStack matrices, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta
+         ) {
+            Item lv = StatsScreen.this.itemStats.items.get(index);
+            StatsScreen.this.renderStatItem(matrices, x + 40, y, lv);
+
+            for (int p = 0; p < StatsScreen.this.itemStats.blockStatTypes.size(); p++) {
+               Stat<Block> lv2;
+               if (lv instanceof BlockItem) {
+                  lv2 = StatsScreen.this.itemStats.blockStatTypes.get(p).getOrCreateStat(((BlockItem)lv).getBlock());
+               } else {
+                  lv2 = null;
+               }
+
+               this.render(matrices, lv2, x + StatsScreen.this.getColumnX(p), y, index % 2 == 0);
+            }
+
+            for (int q = 0; q < StatsScreen.this.itemStats.itemStatTypes.size(); q++) {
+               this.render(
+                  matrices,
+                  StatsScreen.this.itemStats.itemStatTypes.get(q).getOrCreateStat(lv),
+                  x + StatsScreen.this.getColumnX(q + StatsScreen.this.itemStats.blockStatTypes.size()),
+                  y,
+                  index % 2 == 0
+               );
+            }
+         }
+
+         protected void render(MatrixStack arg, @Nullable Stat<?> arg2, int i, int j, boolean bl) {
+            String string = arg2 == null ? "-" : arg2.format(StatsScreen.this.statHandler.getStat(arg2));
+            DrawableHelper.drawStringWithShadow(
+               arg, StatsScreen.this.textRenderer, string, i - StatsScreen.this.textRenderer.getWidth(string), j + 5, bl ? 16777215 : 9474192
+            );
+         }
+      }
+
+      @Environment(EnvType.CLIENT)
+      class ItemComparator implements Comparator<Item> {
+         private ItemComparator() {
+         }
+
+         public int compare(Item arg, Item arg2) {
+            int i;
+            int j;
+            if (ItemStatsListWidget.this.selectedStatType == null) {
+               i = 0;
+               j = 0;
+            } else if (ItemStatsListWidget.this.blockStatTypes.contains(ItemStatsListWidget.this.selectedStatType)) {
+               StatType<Block> lv = (StatType<Block>)ItemStatsListWidget.this.selectedStatType;
+               i = arg instanceof BlockItem ? StatsScreen.this.statHandler.getStat(lv, ((BlockItem)arg).getBlock()) : -1;
+               j = arg2 instanceof BlockItem ? StatsScreen.this.statHandler.getStat(lv, ((BlockItem)arg2).getBlock()) : -1;
+            } else {
+               StatType<Item> lv2 = (StatType<Item>)ItemStatsListWidget.this.selectedStatType;
+               i = StatsScreen.this.statHandler.getStat(lv2, arg);
+               j = StatsScreen.this.statHandler.getStat(lv2, arg2);
+            }
+
+            return i == j
+               ? ItemStatsListWidget.this.field_18760 * Integer.compare(Item.getRawId(arg), Item.getRawId(arg2))
+               : ItemStatsListWidget.this.field_18760 * Integer.compare(i, j);
+         }
+      }
+   }
+}

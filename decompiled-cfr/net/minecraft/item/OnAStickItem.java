@@ -1,0 +1,49 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.item;
+
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ItemSteerable;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.stat.Stats;
+import net.minecraft.util.Hand;
+import net.minecraft.util.TypedActionResult;
+import net.minecraft.world.World;
+
+public class OnAStickItem<T extends Entity>
+extends Item {
+    private final EntityType<T> target;
+    private final int damagePerUse;
+
+    public OnAStickItem(Item.Settings settings, EntityType<T> target, int damagePerUse) {
+        super(settings);
+        this.target = target;
+        this.damagePerUse = damagePerUse;
+    }
+
+    @Override
+    public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
+        ItemStack itemStack = user.getStackInHand(hand);
+        if (world.isClient) {
+            return TypedActionResult.pass(itemStack);
+        }
+        Entity _snowman2 = user.getVehicle();
+        if (user.hasVehicle() && _snowman2 instanceof ItemSteerable && _snowman2.getType() == this.target && (_snowman = (ItemSteerable)((Object)_snowman2)).consumeOnAStickItem()) {
+            itemStack.damage(this.damagePerUse, user, p -> p.sendToolBreakStatus(hand));
+            if (itemStack.isEmpty()) {
+                _snowman = new ItemStack(Items.FISHING_ROD);
+                _snowman.setTag(itemStack.getTag());
+                return TypedActionResult.success(_snowman);
+            }
+            return TypedActionResult.success(itemStack);
+        }
+        user.incrementStat(Stats.USED.getOrCreateStat(this));
+        return TypedActionResult.pass(itemStack);
+    }
+}
+

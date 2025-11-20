@@ -1,0 +1,73 @@
+package net.minecraft.client.gui.widget;
+
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.TranslatableText;
+
+public class LockButtonWidget extends ButtonWidget {
+   private boolean locked;
+
+   public LockButtonWidget(int x, int y, ButtonWidget.PressAction action) {
+      super(x, y, 20, 20, new TranslatableText("narrator.button.difficulty_lock"), action);
+   }
+
+   @Override
+   protected MutableText getNarrationMessage() {
+      return super.getNarrationMessage()
+         .append(". ")
+         .append(
+            this.isLocked() ? new TranslatableText("narrator.button.difficulty_lock.locked") : new TranslatableText("narrator.button.difficulty_lock.unlocked")
+         );
+   }
+
+   public boolean isLocked() {
+      return this.locked;
+   }
+
+   public void setLocked(boolean locked) {
+      this.locked = locked;
+   }
+
+   @Override
+   public void renderButton(MatrixStack matrices, int mouseX, int mouseY, float delta) {
+      MinecraftClient.getInstance().getTextureManager().bindTexture(ButtonWidget.WIDGETS_LOCATION);
+      RenderSystem.color4f(1.0F, 1.0F, 1.0F, 1.0F);
+      LockButtonWidget.IconLocation _snowman;
+      if (!this.active) {
+         _snowman = this.locked ? LockButtonWidget.IconLocation.LOCKED_DISABLED : LockButtonWidget.IconLocation.UNLOCKED_DISABLED;
+      } else if (this.isHovered()) {
+         _snowman = this.locked ? LockButtonWidget.IconLocation.LOCKED_HOVER : LockButtonWidget.IconLocation.UNLOCKED_HOVER;
+      } else {
+         _snowman = this.locked ? LockButtonWidget.IconLocation.LOCKED : LockButtonWidget.IconLocation.UNLOCKED;
+      }
+
+      this.drawTexture(matrices, this.x, this.y, _snowman.getU(), _snowman.getV(), this.width, this.height);
+   }
+
+   static enum IconLocation {
+      LOCKED(0, 146),
+      LOCKED_HOVER(0, 166),
+      LOCKED_DISABLED(0, 186),
+      UNLOCKED(20, 146),
+      UNLOCKED_HOVER(20, 166),
+      UNLOCKED_DISABLED(20, 186);
+
+      private final int u;
+      private final int v;
+
+      private IconLocation(int var3, int var4) {
+         this.u = _snowman;
+         this.v = _snowman;
+      }
+
+      public int getU() {
+         return this.u;
+      }
+
+      public int getV() {
+         return this.v;
+      }
+   }
+}

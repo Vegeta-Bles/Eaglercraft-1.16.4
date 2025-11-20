@@ -1,0 +1,103 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.gui.screen;
+
+import net.minecraft.SharedConstants;
+import net.minecraft.client.gui.screen.ConfirmChatLinkScreen;
+import net.minecraft.client.gui.screen.OpenToLanScreen;
+import net.minecraft.client.gui.screen.SaveLevelScreen;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.StatsScreen;
+import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.gui.screen.advancement.AdvancementsScreen;
+import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
+import net.minecraft.client.gui.screen.options.OptionsScreen;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.realms.gui.screen.RealmsBridgeScreen;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Util;
+
+public class GameMenuScreen
+extends Screen {
+    private final boolean showMenu;
+
+    public GameMenuScreen(boolean showMenu) {
+        super(showMenu ? new TranslatableText("menu.game") : new TranslatableText("menu.paused"));
+        this.showMenu = showMenu;
+    }
+
+    @Override
+    protected void init() {
+        if (this.showMenu) {
+            this.initWidgets();
+        }
+    }
+
+    private void initWidgets() {
+        int n = -16;
+        _snowman = 98;
+        this.addButton(new ButtonWidget(this.width / 2 - 102, this.height / 4 + 24 + -16, 204, 20, new TranslatableText("menu.returnToGame"), buttonWidget -> {
+            this.client.openScreen(null);
+            this.client.mouse.lockCursor();
+        }));
+        this.addButton(new ButtonWidget(this.width / 2 - 102, this.height / 4 + 48 + -16, 98, 20, new TranslatableText("gui.advancements"), buttonWidget -> this.client.openScreen(new AdvancementsScreen(this.client.player.networkHandler.getAdvancementHandler()))));
+        this.addButton(new ButtonWidget(this.width / 2 + 4, this.height / 4 + 48 + -16, 98, 20, new TranslatableText("gui.stats"), buttonWidget -> this.client.openScreen(new StatsScreen(this, this.client.player.getStatHandler()))));
+        String _snowman2 = SharedConstants.getGameVersion().isStable() ? "https://aka.ms/javafeedback?ref=game" : "https://aka.ms/snapshotfeedback?ref=game";
+        this.addButton(new ButtonWidget(this.width / 2 - 102, this.height / 4 + 72 + -16, 98, 20, new TranslatableText("menu.sendFeedback"), buttonWidget -> this.client.openScreen(new ConfirmChatLinkScreen(bl -> {
+            if (bl) {
+                Util.getOperatingSystem().open(_snowman2);
+            }
+            this.client.openScreen(this);
+        }, _snowman2, true))));
+        this.addButton(new ButtonWidget(this.width / 2 + 4, this.height / 4 + 72 + -16, 98, 20, new TranslatableText("menu.reportBugs"), buttonWidget -> this.client.openScreen(new ConfirmChatLinkScreen(bl -> {
+            if (bl) {
+                Util.getOperatingSystem().open("https://aka.ms/snapshotbugs?ref=game");
+            }
+            this.client.openScreen(this);
+        }, "https://aka.ms/snapshotbugs?ref=game", true))));
+        this.addButton(new ButtonWidget(this.width / 2 - 102, this.height / 4 + 96 + -16, 98, 20, new TranslatableText("menu.options"), buttonWidget -> this.client.openScreen(new OptionsScreen(this, this.client.options))));
+        ButtonWidget _snowman3 = this.addButton(new ButtonWidget(this.width / 2 + 4, this.height / 4 + 96 + -16, 98, 20, new TranslatableText("menu.shareToLan"), buttonWidget -> this.client.openScreen(new OpenToLanScreen(this))));
+        _snowman3.active = this.client.isIntegratedServerRunning() && !this.client.getServer().isRemote();
+        ButtonWidget _snowman4 = this.addButton(new ButtonWidget(this.width / 2 - 102, this.height / 4 + 120 + -16, 204, 20, new TranslatableText("menu.returnToMenu"), buttonWidget -> {
+            boolean bl = this.client.isInSingleplayer();
+            _snowman = this.client.isConnectedToRealms();
+            buttonWidget.active = false;
+            this.client.world.disconnect();
+            if (bl) {
+                this.client.disconnect(new SaveLevelScreen(new TranslatableText("menu.savingLevel")));
+            } else {
+                this.client.disconnect();
+            }
+            if (bl) {
+                this.client.openScreen(new TitleScreen());
+            } else if (_snowman) {
+                RealmsBridgeScreen realmsBridgeScreen = new RealmsBridgeScreen();
+                realmsBridgeScreen.switchToRealms(new TitleScreen());
+            } else {
+                this.client.openScreen(new MultiplayerScreen(new TitleScreen()));
+            }
+        }));
+        if (!this.client.isInSingleplayer()) {
+            _snowman4.setMessage(new TranslatableText("menu.disconnect"));
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+    }
+
+    @Override
+    public void render(MatrixStack matrices, int mouseX, int mouseY, float delta) {
+        if (this.showMenu) {
+            this.renderBackground(matrices);
+            GameMenuScreen.drawCenteredText(matrices, this.textRenderer, this.title, this.width / 2, 40, 0xFFFFFF);
+        } else {
+            GameMenuScreen.drawCenteredText(matrices, this.textRenderer, this.title, this.width / 2, 10, 0xFFFFFF);
+        }
+        super.render(matrices, mouseX, mouseY, delta);
+    }
+}
+

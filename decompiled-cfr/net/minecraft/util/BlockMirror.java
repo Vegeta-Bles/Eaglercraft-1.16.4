@@ -1,0 +1,54 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.util;
+
+import net.minecraft.util.BlockRotation;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.DirectionTransformation;
+
+public enum BlockMirror {
+    NONE(DirectionTransformation.IDENTITY),
+    LEFT_RIGHT(DirectionTransformation.INVERT_Z),
+    FRONT_BACK(DirectionTransformation.INVERT_X);
+
+    private final DirectionTransformation directionTransformation;
+
+    private BlockMirror(DirectionTransformation directionTransformation) {
+        this.directionTransformation = directionTransformation;
+    }
+
+    public int mirror(int rotation, int fullTurn) {
+        int n = fullTurn / 2;
+        _snowman = rotation > n ? rotation - fullTurn : rotation;
+        switch (this) {
+            case FRONT_BACK: {
+                return (fullTurn - _snowman) % fullTurn;
+            }
+            case LEFT_RIGHT: {
+                return (n - _snowman + fullTurn) % fullTurn;
+            }
+        }
+        return rotation;
+    }
+
+    public BlockRotation getRotation(Direction direction) {
+        Direction.Axis axis = direction.getAxis();
+        return this == LEFT_RIGHT && axis == Direction.Axis.Z || this == FRONT_BACK && axis == Direction.Axis.X ? BlockRotation.CLOCKWISE_180 : BlockRotation.NONE;
+    }
+
+    public Direction apply(Direction direction) {
+        if (this == FRONT_BACK && direction.getAxis() == Direction.Axis.X) {
+            return direction.getOpposite();
+        }
+        if (this == LEFT_RIGHT && direction.getAxis() == Direction.Axis.Z) {
+            return direction.getOpposite();
+        }
+        return direction;
+    }
+
+    public DirectionTransformation getDirectionTransformation() {
+        return this.directionTransformation;
+    }
+}
+

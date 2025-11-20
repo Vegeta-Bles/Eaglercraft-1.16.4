@@ -1,0 +1,71 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.brigadier.CommandDispatcher
+ *  com.mojang.brigadier.arguments.IntegerArgumentType
+ *  com.mojang.brigadier.builder.LiteralArgumentBuilder
+ *  com.mojang.brigadier.builder.RequiredArgumentBuilder
+ *  com.mojang.brigadier.context.CommandContext
+ *  com.mojang.brigadier.exceptions.CommandSyntaxException
+ */
+package net.minecraft.server.command;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import java.util.Collection;
+import net.minecraft.command.argument.EntityArgumentType;
+import net.minecraft.command.argument.ItemStackArgument;
+import net.minecraft.command.argument.ItemStackArgumentType;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.TranslatableText;
+
+public class GiveCommand {
+    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+        dispatcher.register((LiteralArgumentBuilder)((LiteralArgumentBuilder)CommandManager.literal("give").requires(serverCommandSource -> serverCommandSource.hasPermissionLevel(2))).then(CommandManager.argument("targets", EntityArgumentType.players()).then(((RequiredArgumentBuilder)CommandManager.argument("item", ItemStackArgumentType.itemStack()).executes(commandContext -> GiveCommand.execute((ServerCommandSource)commandContext.getSource(), ItemStackArgumentType.getItemStackArgument(commandContext, "item"), EntityArgumentType.getPlayers((CommandContext<ServerCommandSource>)commandContext, "targets"), 1))).then(CommandManager.argument("count", IntegerArgumentType.integer((int)1)).executes(commandContext -> GiveCommand.execute((ServerCommandSource)commandContext.getSource(), ItemStackArgumentType.getItemStackArgument(commandContext, "item"), EntityArgumentType.getPlayers((CommandContext<ServerCommandSource>)commandContext, "targets"), IntegerArgumentType.getInteger((CommandContext)commandContext, (String)"count")))))));
+    }
+
+    private static int execute(ServerCommandSource source, ItemStackArgument item, Collection<ServerPlayerEntity> targets, int count) throws CommandSyntaxException {
+        for (ServerPlayerEntity serverPlayerEntity : targets) {
+            int n = count;
+            while (n > 0) {
+                ItemEntity _snowman3;
+                _snowman = Math.min(item.getItem().getMaxCount(), n);
+                n -= _snowman;
+                ItemStack itemStack = item.createStack(_snowman, false);
+                boolean _snowman2 = serverPlayerEntity.inventory.insertStack(itemStack);
+                if (!_snowman2 || !itemStack.isEmpty()) {
+                    _snowman3 = serverPlayerEntity.dropItem(itemStack, false);
+                    if (_snowman3 == null) continue;
+                    _snowman3.resetPickupDelay();
+                    _snowman3.setOwner(serverPlayerEntity.getUuid());
+                    continue;
+                }
+                itemStack.setCount(1);
+                _snowman3 = serverPlayerEntity.dropItem(itemStack, false);
+                if (_snowman3 != null) {
+                    _snowman3.setDespawnImmediately();
+                }
+                serverPlayerEntity.world.playSound(null, serverPlayerEntity.getX(), serverPlayerEntity.getY(), serverPlayerEntity.getZ(), SoundEvents.ENTITY_ITEM_PICKUP, SoundCategory.PLAYERS, 0.2f, ((serverPlayerEntity.getRandom().nextFloat() - serverPlayerEntity.getRandom().nextFloat()) * 0.7f + 1.0f) * 2.0f);
+                serverPlayerEntity.playerScreenHandler.sendContentUpdates();
+            }
+        }
+        if (targets.size() == 1) {
+            source.sendFeedback(new TranslatableText("commands.give.success.single", count, item.createStack(count, false).toHoverableText(), targets.iterator().next().getDisplayName()), true);
+        } else {
+            source.sendFeedback(new TranslatableText("commands.give.success.single", count, item.createStack(count, false).toHoverableText(), targets.size()), true);
+        }
+        return targets.size();
+    }
+}
+

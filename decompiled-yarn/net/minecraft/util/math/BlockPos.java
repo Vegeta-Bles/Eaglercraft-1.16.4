@@ -1,0 +1,509 @@
+package net.minecraft.util.math;
+
+import com.google.common.collect.AbstractIterator;
+import com.mojang.serialization.Codec;
+import java.util.Optional;
+import java.util.Random;
+import java.util.function.Predicate;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
+import javax.annotation.concurrent.Immutable;
+import net.minecraft.util.BlockRotation;
+import net.minecraft.util.Util;
+import org.apache.commons.lang3.Validate;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+@Immutable
+public class BlockPos extends Vec3i {
+   public static final Codec<BlockPos> CODEC = Codec.INT_STREAM
+      .comapFlatMap(
+         stream -> Util.toIntArray(stream, 3).map(values -> new BlockPos(values[0], values[1], values[2])),
+         pos -> IntStream.of(pos.getX(), pos.getY(), pos.getZ())
+      )
+      .stable();
+   private static final Logger LOGGER = LogManager.getLogger();
+   public static final BlockPos ORIGIN = new BlockPos(0, 0, 0);
+   private static final int SIZE_BITS_X = 1 + MathHelper.log2(MathHelper.smallestEncompassingPowerOfTwo(30000000));
+   private static final int SIZE_BITS_Z = SIZE_BITS_X;
+   private static final int SIZE_BITS_Y = 64 - SIZE_BITS_X - SIZE_BITS_Z;
+   private static final long BITS_X = (1L << SIZE_BITS_X) - 1L;
+   private static final long BITS_Y = (1L << SIZE_BITS_Y) - 1L;
+   private static final long BITS_Z = (1L << SIZE_BITS_Z) - 1L;
+   private static final int BIT_SHIFT_Z = SIZE_BITS_Y;
+   private static final int BIT_SHIFT_X = SIZE_BITS_Y + SIZE_BITS_Z;
+
+   public BlockPos(int _snowman, int _snowman, int _snowman) {
+      super(_snowman, _snowman, _snowman);
+   }
+
+   public BlockPos(double _snowman, double _snowman, double _snowman) {
+      super(_snowman, _snowman, _snowman);
+   }
+
+   public BlockPos(Vec3d pos) {
+      this(pos.x, pos.y, pos.z);
+   }
+
+   public BlockPos(Position pos) {
+      this(pos.getX(), pos.getY(), pos.getZ());
+   }
+
+   public BlockPos(Vec3i pos) {
+      this(pos.getX(), pos.getY(), pos.getZ());
+   }
+
+   public static long offset(long value, Direction direction) {
+      return add(value, direction.getOffsetX(), direction.getOffsetY(), direction.getOffsetZ());
+   }
+
+   public static long add(long value, int x, int y, int z) {
+      return asLong(unpackLongX(value) + x, unpackLongY(value) + y, unpackLongZ(value) + z);
+   }
+
+   public static int unpackLongX(long packedPos) {
+      return (int)(packedPos << 64 - BIT_SHIFT_X - SIZE_BITS_X >> 64 - SIZE_BITS_X);
+   }
+
+   public static int unpackLongY(long packedPos) {
+      return (int)(packedPos << 64 - SIZE_BITS_Y >> 64 - SIZE_BITS_Y);
+   }
+
+   public static int unpackLongZ(long packedPos) {
+      return (int)(packedPos << 64 - BIT_SHIFT_Z - SIZE_BITS_Z >> 64 - SIZE_BITS_Z);
+   }
+
+   public static BlockPos fromLong(long packedPos) {
+      return new BlockPos(unpackLongX(packedPos), unpackLongY(packedPos), unpackLongZ(packedPos));
+   }
+
+   public long asLong() {
+      return asLong(this.getX(), this.getY(), this.getZ());
+   }
+
+   public static long asLong(int x, int y, int z) {
+      long _snowman = 0L;
+      _snowman |= ((long)x & BITS_X) << BIT_SHIFT_X;
+      _snowman |= ((long)y & BITS_Y) << 0;
+      return _snowman | ((long)z & BITS_Z) << BIT_SHIFT_Z;
+   }
+
+   public static long removeChunkSectionLocalY(long y) {
+      return y & -16L;
+   }
+
+   public BlockPos add(double x, double y, double z) {
+      return x == 0.0 && y == 0.0 && z == 0.0 ? this : new BlockPos((double)this.getX() + x, (double)this.getY() + y, (double)this.getZ() + z);
+   }
+
+   public BlockPos add(int x, int y, int z) {
+      return x == 0 && y == 0 && z == 0 ? this : new BlockPos(this.getX() + x, this.getY() + y, this.getZ() + z);
+   }
+
+   public BlockPos add(Vec3i pos) {
+      return this.add(pos.getX(), pos.getY(), pos.getZ());
+   }
+
+   public BlockPos subtract(Vec3i pos) {
+      return this.add(-pos.getX(), -pos.getY(), -pos.getZ());
+   }
+
+   public BlockPos up() {
+      return this.offset(Direction.UP);
+   }
+
+   public BlockPos up(int distance) {
+      return this.offset(Direction.UP, distance);
+   }
+
+   public BlockPos down() {
+      return this.offset(Direction.DOWN);
+   }
+
+   public BlockPos down(int _snowman) {
+      return this.offset(Direction.DOWN, _snowman);
+   }
+
+   public BlockPos north() {
+      return this.offset(Direction.NORTH);
+   }
+
+   public BlockPos north(int distance) {
+      return this.offset(Direction.NORTH, distance);
+   }
+
+   public BlockPos south() {
+      return this.offset(Direction.SOUTH);
+   }
+
+   public BlockPos south(int distance) {
+      return this.offset(Direction.SOUTH, distance);
+   }
+
+   public BlockPos west() {
+      return this.offset(Direction.WEST);
+   }
+
+   public BlockPos west(int distance) {
+      return this.offset(Direction.WEST, distance);
+   }
+
+   public BlockPos east() {
+      return this.offset(Direction.EAST);
+   }
+
+   public BlockPos east(int distance) {
+      return this.offset(Direction.EAST, distance);
+   }
+
+   public BlockPos offset(Direction direction) {
+      return new BlockPos(this.getX() + direction.getOffsetX(), this.getY() + direction.getOffsetY(), this.getZ() + direction.getOffsetZ());
+   }
+
+   public BlockPos offset(Direction _snowman, int _snowman) {
+      return _snowman == 0 ? this : new BlockPos(this.getX() + _snowman.getOffsetX() * _snowman, this.getY() + _snowman.getOffsetY() * _snowman, this.getZ() + _snowman.getOffsetZ() * _snowman);
+   }
+
+   public BlockPos offset(Direction.Axis axis, int distance) {
+      if (distance == 0) {
+         return this;
+      } else {
+         int _snowman = axis == Direction.Axis.X ? distance : 0;
+         int _snowmanx = axis == Direction.Axis.Y ? distance : 0;
+         int _snowmanxx = axis == Direction.Axis.Z ? distance : 0;
+         return new BlockPos(this.getX() + _snowman, this.getY() + _snowmanx, this.getZ() + _snowmanxx);
+      }
+   }
+
+   public BlockPos rotate(BlockRotation rotation) {
+      switch (rotation) {
+         case NONE:
+         default:
+            return this;
+         case CLOCKWISE_90:
+            return new BlockPos(-this.getZ(), this.getY(), this.getX());
+         case CLOCKWISE_180:
+            return new BlockPos(-this.getX(), this.getY(), -this.getZ());
+         case COUNTERCLOCKWISE_90:
+            return new BlockPos(this.getZ(), this.getY(), -this.getX());
+      }
+   }
+
+   public BlockPos crossProduct(Vec3i pos) {
+      return new BlockPos(
+         this.getY() * pos.getZ() - this.getZ() * pos.getY(),
+         this.getZ() * pos.getX() - this.getX() * pos.getZ(),
+         this.getX() * pos.getY() - this.getY() * pos.getX()
+      );
+   }
+
+   public BlockPos toImmutable() {
+      return this;
+   }
+
+   public BlockPos.Mutable mutableCopy() {
+      return new BlockPos.Mutable(this.getX(), this.getY(), this.getZ());
+   }
+
+   public static Iterable<BlockPos> iterateRandomly(Random random, int count, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+      int _snowman = maxX - minX + 1;
+      int _snowmanx = maxY - minY + 1;
+      int _snowmanxx = maxZ - minZ + 1;
+      return () -> new AbstractIterator<BlockPos>() {
+            final BlockPos.Mutable pos = new BlockPos.Mutable();
+            int remaining = count;
+
+            protected BlockPos computeNext() {
+               if (this.remaining <= 0) {
+                  return (BlockPos)this.endOfData();
+               } else {
+                  BlockPos _snowman = this.pos.set(minX + random.nextInt(_snowman), minY + random.nextInt(_snowman), minZ + random.nextInt(_snowman));
+                  this.remaining--;
+                  return _snowman;
+               }
+            }
+         };
+   }
+
+   public static Iterable<BlockPos> iterateOutwards(BlockPos center, int xRange, int yRange, int zRange) {
+      int _snowman = xRange + yRange + zRange;
+      int _snowmanx = center.getX();
+      int _snowmanxx = center.getY();
+      int _snowmanxxx = center.getZ();
+      return () -> new AbstractIterator<BlockPos>() {
+            private final BlockPos.Mutable pos = new BlockPos.Mutable();
+            private int manhattanDistance;
+            private int limitX;
+            private int limitY;
+            private int dx;
+            private int dy;
+            private boolean field_23379;
+
+            protected BlockPos computeNext() {
+               if (this.field_23379) {
+                  this.field_23379 = false;
+                  this.pos.setZ(_snowman - (this.pos.getZ() - _snowman));
+                  return this.pos;
+               } else {
+                  BlockPos _snowman;
+                  for (_snowman = null; _snowman == null; this.dy++) {
+                     if (this.dy > this.limitY) {
+                        this.dx++;
+                        if (this.dx > this.limitX) {
+                           this.manhattanDistance++;
+                           if (this.manhattanDistance > _snowman) {
+                              return (BlockPos)this.endOfData();
+                           }
+
+                           this.limitX = Math.min(xRange, this.manhattanDistance);
+                           this.dx = -this.limitX;
+                        }
+
+                        this.limitY = Math.min(yRange, this.manhattanDistance - Math.abs(this.dx));
+                        this.dy = -this.limitY;
+                     }
+
+                     int _snowmanx = this.dx;
+                     int _snowmanxx = this.dy;
+                     int _snowmanxxx = this.manhattanDistance - Math.abs(_snowmanx) - Math.abs(_snowmanxx);
+                     if (_snowmanxxx <= zRange) {
+                        this.field_23379 = _snowmanxxx != 0;
+                        _snowman = this.pos.set(_snowman + _snowmanx, _snowman + _snowmanxx, _snowman + _snowmanxxx);
+                     }
+                  }
+
+                  return _snowman;
+               }
+            }
+         };
+   }
+
+   public static Optional<BlockPos> findClosest(BlockPos pos, int horizontalRange, int verticalRange, Predicate<BlockPos> condition) {
+      return streamOutwards(pos, horizontalRange, verticalRange, horizontalRange).filter(condition).findFirst();
+   }
+
+   public static Stream<BlockPos> streamOutwards(BlockPos center, int maxX, int maxY, int maxZ) {
+      return StreamSupport.stream(iterateOutwards(center, maxX, maxY, maxZ).spliterator(), false);
+   }
+
+   public static Iterable<BlockPos> iterate(BlockPos start, BlockPos end) {
+      return iterate(
+         Math.min(start.getX(), end.getX()),
+         Math.min(start.getY(), end.getY()),
+         Math.min(start.getZ(), end.getZ()),
+         Math.max(start.getX(), end.getX()),
+         Math.max(start.getY(), end.getY()),
+         Math.max(start.getZ(), end.getZ())
+      );
+   }
+
+   public static Stream<BlockPos> stream(BlockPos start, BlockPos end) {
+      return StreamSupport.stream(iterate(start, end).spliterator(), false);
+   }
+
+   public static Stream<BlockPos> stream(BlockBox box) {
+      return stream(
+         Math.min(box.minX, box.maxX),
+         Math.min(box.minY, box.maxY),
+         Math.min(box.minZ, box.maxZ),
+         Math.max(box.minX, box.maxX),
+         Math.max(box.minY, box.maxY),
+         Math.max(box.minZ, box.maxZ)
+      );
+   }
+
+   public static Stream<BlockPos> stream(Box box) {
+      return stream(
+         MathHelper.floor(box.minX),
+         MathHelper.floor(box.minY),
+         MathHelper.floor(box.minZ),
+         MathHelper.floor(box.maxX),
+         MathHelper.floor(box.maxY),
+         MathHelper.floor(box.maxZ)
+      );
+   }
+
+   public static Stream<BlockPos> stream(int startX, int startY, int startZ, int endX, int endY, int endZ) {
+      return StreamSupport.stream(iterate(startX, startY, startZ, endX, endY, endZ).spliterator(), false);
+   }
+
+   public static Iterable<BlockPos> iterate(int startX, int startY, int startZ, int endX, int endY, int endZ) {
+      int _snowman = endX - startX + 1;
+      int _snowmanx = endY - startY + 1;
+      int _snowmanxx = endZ - startZ + 1;
+      int _snowmanxxx = _snowman * _snowmanx * _snowmanxx;
+      return () -> new AbstractIterator<BlockPos>() {
+            private final BlockPos.Mutable pos = new BlockPos.Mutable();
+            private int index;
+
+            protected BlockPos computeNext() {
+               if (this.index == _snowman) {
+                  return (BlockPos)this.endOfData();
+               } else {
+                  int _snowman = this.index % _snowman;
+                  int _snowmanx = this.index / _snowman;
+                  int _snowmanxx = _snowmanx % _snowman;
+                  int _snowmanxxx = _snowmanx / _snowman;
+                  this.index++;
+                  return this.pos.set(startX + _snowman, startY + _snowmanxx, startZ + _snowmanxxx);
+               }
+            }
+         };
+   }
+
+   public static Iterable<BlockPos.Mutable> method_30512(BlockPos _snowman, int _snowman, Direction _snowman, Direction _snowman) {
+      Validate.validState(_snowman.getAxis() != _snowman.getAxis(), "The two directions cannot be on the same axis", new Object[0]);
+      return () -> new AbstractIterator<BlockPos.Mutable>() {
+            private final Direction[] directions = new Direction[]{_snowman, _snowman, _snowman.getOpposite(), _snowman.getOpposite()};
+            private final BlockPos.Mutable pos = _snowman.mutableCopy().move(_snowman);
+            private final int field_25905 = 4 * _snowman;
+            private int field_25906 = -1;
+            private int field_25907;
+            private int field_25908;
+            private int field_25909 = this.pos.getX();
+            private int field_25910 = this.pos.getY();
+            private int field_25911 = this.pos.getZ();
+
+            protected BlockPos.Mutable computeNext() {
+               this.pos.set(this.field_25909, this.field_25910, this.field_25911).move(this.directions[(this.field_25906 + 4) % 4]);
+               this.field_25909 = this.pos.getX();
+               this.field_25910 = this.pos.getY();
+               this.field_25911 = this.pos.getZ();
+               if (this.field_25908 >= this.field_25907) {
+                  if (this.field_25906 >= this.field_25905) {
+                     return (BlockPos.Mutable)this.endOfData();
+                  }
+
+                  this.field_25906++;
+                  this.field_25908 = 0;
+                  this.field_25907 = this.field_25906 / 2 + 1;
+               }
+
+               this.field_25908++;
+               return this.pos;
+            }
+         };
+   }
+
+   public static class Mutable extends BlockPos {
+      public Mutable() {
+         this(0, 0, 0);
+      }
+
+      public Mutable(int _snowman, int _snowman, int _snowman) {
+         super(_snowman, _snowman, _snowman);
+      }
+
+      public Mutable(double _snowman, double _snowman, double _snowman) {
+         this(MathHelper.floor(_snowman), MathHelper.floor(_snowman), MathHelper.floor(_snowman));
+      }
+
+      @Override
+      public BlockPos add(double x, double y, double z) {
+         return super.add(x, y, z).toImmutable();
+      }
+
+      @Override
+      public BlockPos add(int x, int y, int z) {
+         return super.add(x, y, z).toImmutable();
+      }
+
+      @Override
+      public BlockPos offset(Direction _snowman, int _snowman) {
+         return super.offset(_snowman, _snowman).toImmutable();
+      }
+
+      @Override
+      public BlockPos offset(Direction.Axis axis, int distance) {
+         return super.offset(axis, distance).toImmutable();
+      }
+
+      @Override
+      public BlockPos rotate(BlockRotation rotation) {
+         return super.rotate(rotation).toImmutable();
+      }
+
+      public BlockPos.Mutable set(int x, int y, int z) {
+         this.setX(x);
+         this.setY(y);
+         this.setZ(z);
+         return this;
+      }
+
+      public BlockPos.Mutable set(double x, double y, double z) {
+         return this.set(MathHelper.floor(x), MathHelper.floor(y), MathHelper.floor(z));
+      }
+
+      public BlockPos.Mutable set(Vec3i pos) {
+         return this.set(pos.getX(), pos.getY(), pos.getZ());
+      }
+
+      public BlockPos.Mutable set(long pos) {
+         return this.set(unpackLongX(pos), unpackLongY(pos), unpackLongZ(pos));
+      }
+
+      public BlockPos.Mutable set(AxisCycleDirection axis, int x, int y, int z) {
+         return this.set(axis.choose(x, y, z, Direction.Axis.X), axis.choose(x, y, z, Direction.Axis.Y), axis.choose(x, y, z, Direction.Axis.Z));
+      }
+
+      public BlockPos.Mutable set(Vec3i pos, Direction direction) {
+         return this.set(pos.getX() + direction.getOffsetX(), pos.getY() + direction.getOffsetY(), pos.getZ() + direction.getOffsetZ());
+      }
+
+      public BlockPos.Mutable set(Vec3i pos, int x, int y, int z) {
+         return this.set(pos.getX() + x, pos.getY() + y, pos.getZ() + z);
+      }
+
+      public BlockPos.Mutable move(Direction direction) {
+         return this.move(direction, 1);
+      }
+
+      public BlockPos.Mutable move(Direction direction, int distance) {
+         return this.set(
+            this.getX() + direction.getOffsetX() * distance, this.getY() + direction.getOffsetY() * distance, this.getZ() + direction.getOffsetZ() * distance
+         );
+      }
+
+      public BlockPos.Mutable move(int dx, int dy, int dz) {
+         return this.set(this.getX() + dx, this.getY() + dy, this.getZ() + dz);
+      }
+
+      public BlockPos.Mutable move(Vec3i vec) {
+         return this.set(this.getX() + vec.getX(), this.getY() + vec.getY(), this.getZ() + vec.getZ());
+      }
+
+      public BlockPos.Mutable clamp(Direction.Axis axis, int min, int max) {
+         switch (axis) {
+            case X:
+               return this.set(MathHelper.clamp(this.getX(), min, max), this.getY(), this.getZ());
+            case Y:
+               return this.set(this.getX(), MathHelper.clamp(this.getY(), min, max), this.getZ());
+            case Z:
+               return this.set(this.getX(), this.getY(), MathHelper.clamp(this.getZ(), min, max));
+            default:
+               throw new IllegalStateException("Unable to clamp axis " + axis);
+         }
+      }
+
+      @Override
+      public void setX(int x) {
+         super.setX(x);
+      }
+
+      @Override
+      public void setY(int y) {
+         super.setY(y);
+      }
+
+      @Override
+      public void setZ(int z) {
+         super.setZ(z);
+      }
+
+      @Override
+      public BlockPos toImmutable() {
+         return new BlockPos(this);
+      }
+   }
+}

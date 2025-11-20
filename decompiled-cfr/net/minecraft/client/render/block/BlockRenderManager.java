@@ -1,0 +1,121 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.block;
+
+import java.util.Random;
+import net.minecraft.block.BlockRenderType;
+import net.minecraft.block.BlockState;
+import net.minecraft.client.color.block.BlockColors;
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayers;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.block.BlockModelRenderer;
+import net.minecraft.client.render.block.BlockModels;
+import net.minecraft.client.render.block.FluidRenderer;
+import net.minecraft.client.render.item.BuiltinModelItemRenderer;
+import net.minecraft.client.render.model.BakedModel;
+import net.minecraft.client.render.model.json.ModelTransformation;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.item.ItemStack;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.resource.SynchronousResourceReloadListener;
+import net.minecraft.util.crash.CrashException;
+import net.minecraft.util.crash.CrashReport;
+import net.minecraft.util.crash.CrashReportSection;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.BlockRenderView;
+
+public class BlockRenderManager
+implements SynchronousResourceReloadListener {
+    private final BlockModels models;
+    private final BlockModelRenderer blockModelRenderer;
+    private final FluidRenderer fluidRenderer;
+    private final Random random = new Random();
+    private final BlockColors blockColors;
+
+    public BlockRenderManager(BlockModels models, BlockColors blockColors) {
+        this.models = models;
+        this.blockColors = blockColors;
+        this.blockModelRenderer = new BlockModelRenderer(this.blockColors);
+        this.fluidRenderer = new FluidRenderer();
+    }
+
+    public BlockModels getModels() {
+        return this.models;
+    }
+
+    public void renderDamage(BlockState state, BlockPos pos, BlockRenderView world, MatrixStack matrix, VertexConsumer vertexConsumer) {
+        if (state.getRenderType() != BlockRenderType.MODEL) {
+            return;
+        }
+        BakedModel bakedModel = this.models.getModel(state);
+        long _snowman2 = state.getRenderingSeed(pos);
+        this.blockModelRenderer.render(world, bakedModel, state, pos, matrix, vertexConsumer, true, this.random, _snowman2, OverlayTexture.DEFAULT_UV);
+    }
+
+    public boolean renderBlock(BlockState state, BlockPos pos, BlockRenderView world, MatrixStack matrix, VertexConsumer vertexConsumer, boolean cull, Random random) {
+        try {
+            BlockRenderType blockRenderType = state.getRenderType();
+            if (blockRenderType != BlockRenderType.MODEL) {
+                return false;
+            }
+            return this.blockModelRenderer.render(world, this.getModel(state), state, pos, matrix, vertexConsumer, cull, random, state.getRenderingSeed(pos), OverlayTexture.DEFAULT_UV);
+        }
+        catch (Throwable throwable) {
+            CrashReport crashReport = CrashReport.create(throwable, "Tesselating block in world");
+            CrashReportSection _snowman2 = crashReport.addElement("Block being tesselated");
+            CrashReportSection.addBlockInfo(_snowman2, pos, state);
+            throw new CrashException(crashReport);
+        }
+    }
+
+    public boolean renderFluid(BlockPos pos, BlockRenderView blockRenderView, VertexConsumer vertexConsumer, FluidState fluidState) {
+        try {
+            return this.fluidRenderer.render(blockRenderView, pos, vertexConsumer, fluidState);
+        }
+        catch (Throwable throwable) {
+            CrashReport crashReport = CrashReport.create(throwable, "Tesselating liquid in world");
+            CrashReportSection _snowman2 = crashReport.addElement("Block being tesselated");
+            CrashReportSection.addBlockInfo(_snowman2, pos, null);
+            throw new CrashException(crashReport);
+        }
+    }
+
+    public BlockModelRenderer getModelRenderer() {
+        return this.blockModelRenderer;
+    }
+
+    public BakedModel getModel(BlockState state) {
+        return this.models.getModel(state);
+    }
+
+    public void renderBlockAsEntity(BlockState state, MatrixStack matrices, VertexConsumerProvider vertexConsumer, int light, int overlay) {
+        BlockRenderType blockRenderType = state.getRenderType();
+        if (blockRenderType == BlockRenderType.INVISIBLE) {
+            return;
+        }
+        switch (blockRenderType) {
+            case MODEL: {
+                BakedModel bakedModel = this.getModel(state);
+                int _snowman2 = this.blockColors.getColor(state, null, null, 0);
+                float _snowman3 = (float)(_snowman2 >> 16 & 0xFF) / 255.0f;
+                float _snowman4 = (float)(_snowman2 >> 8 & 0xFF) / 255.0f;
+                float _snowman5 = (float)(_snowman2 & 0xFF) / 255.0f;
+                this.blockModelRenderer.render(matrices.peek(), vertexConsumer.getBuffer(RenderLayers.getEntityBlockLayer(state, false)), state, bakedModel, _snowman3, _snowman4, _snowman5, light, overlay);
+                break;
+            }
+            case ENTITYBLOCK_ANIMATED: {
+                BuiltinModelItemRenderer.INSTANCE.render(new ItemStack(state.getBlock()), ModelTransformation.Mode.NONE, matrices, vertexConsumer, light, overlay);
+            }
+        }
+    }
+
+    @Override
+    public void apply(ResourceManager manager) {
+        this.fluidRenderer.onResourceReload();
+    }
+}
+

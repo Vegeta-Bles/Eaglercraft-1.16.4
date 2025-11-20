@@ -1,0 +1,573 @@
+package net.minecraft.util.math;
+
+import java.util.Random;
+import java.util.UUID;
+import java.util.function.IntPredicate;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.util.Util;
+import org.apache.commons.lang3.math.NumberUtils;
+
+public class MathHelper {
+   public static final float SQUARE_ROOT_OF_TWO = sqrt(2.0F);
+   private static final float[] SINE_TABLE = Util.make(new float[65536], fs -> {
+      for (int ix = 0; ix < fs.length; ix++) {
+         fs[ix] = (float)Math.sin((double)ix * Math.PI * 2.0 / 65536.0);
+      }
+   });
+   private static final Random RANDOM = new Random();
+   private static final int[] MULTIPLY_DE_BRUIJN_BIT_POSITION = new int[]{
+      0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8, 31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
+   };
+   private static final double SMALLEST_FRACTION_FREE_DOUBLE = Double.longBitsToDouble(4805340802404319232L);
+   private static final double[] ARCSINE_TABLE = new double[257];
+   private static final double[] COSINE_TABLE = new double[257];
+
+   public static float sin(float f) {
+      return SINE_TABLE[(int)(f * 10430.378F) & 65535];
+   }
+
+   public static float cos(float f) {
+      return SINE_TABLE[(int)(f * 10430.378F + 16384.0F) & 65535];
+   }
+
+   public static float sqrt(float f) {
+      return (float)Math.sqrt((double)f);
+   }
+
+   public static float sqrt(double d) {
+      return (float)Math.sqrt(d);
+   }
+
+   public static int floor(float f) {
+      int i = (int)f;
+      return f < (float)i ? i - 1 : i;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int fastFloor(double d) {
+      return (int)(d + 1024.0) - 1024;
+   }
+
+   public static int floor(double d) {
+      int i = (int)d;
+      return d < (double)i ? i - 1 : i;
+   }
+
+   public static long lfloor(double d) {
+      long l = (long)d;
+      return d < (double)l ? l - 1L : l;
+   }
+
+   public static float abs(float f) {
+      return Math.abs(f);
+   }
+
+   public static int abs(int i) {
+      return Math.abs(i);
+   }
+
+   public static int ceil(float f) {
+      int i = (int)f;
+      return f > (float)i ? i + 1 : i;
+   }
+
+   public static int ceil(double d) {
+      int i = (int)d;
+      return d > (double)i ? i + 1 : i;
+   }
+
+   public static int clamp(int value, int min, int max) {
+      if (value < min) {
+         return min;
+      } else {
+         return value > max ? max : value;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static long clamp(long value, long min, long max) {
+      if (value < min) {
+         return min;
+      } else {
+         return value > max ? max : value;
+      }
+   }
+
+   public static float clamp(float value, float min, float max) {
+      if (value < min) {
+         return min;
+      } else {
+         return value > max ? max : value;
+      }
+   }
+
+   public static double clamp(double value, double min, double max) {
+      if (value < min) {
+         return min;
+      } else {
+         return value > max ? max : value;
+      }
+   }
+
+   public static double clampedLerp(double start, double end, double delta) {
+      if (delta < 0.0) {
+         return start;
+      } else {
+         return delta > 1.0 ? end : lerp(delta, start, end);
+      }
+   }
+
+   public static double absMax(double d, double e) {
+      if (d < 0.0) {
+         d = -d;
+      }
+
+      if (e < 0.0) {
+         e = -e;
+      }
+
+      return d > e ? d : e;
+   }
+
+   public static int floorDiv(int i, int j) {
+      return Math.floorDiv(i, j);
+   }
+
+   public static int nextInt(Random random, int min, int max) {
+      return min >= max ? min : random.nextInt(max - min + 1) + min;
+   }
+
+   public static float nextFloat(Random random, float min, float max) {
+      return min >= max ? min : random.nextFloat() * (max - min) + min;
+   }
+
+   public static double nextDouble(Random random, double min, double max) {
+      return min >= max ? min : random.nextDouble() * (max - min) + min;
+   }
+
+   public static double average(long[] array) {
+      long l = 0L;
+
+      for (long m : array) {
+         l += m;
+      }
+
+      return (double)l / (double)array.length;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static boolean approximatelyEquals(float a, float b) {
+      return Math.abs(b - a) < 1.0E-5F;
+   }
+
+   public static boolean approximatelyEquals(double a, double b) {
+      return Math.abs(b - a) < 1.0E-5F;
+   }
+
+   public static int floorMod(int i, int j) {
+      return Math.floorMod(i, j);
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static float floorMod(float f, float g) {
+      return (f % g + g) % g;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static double floorMod(double d, double e) {
+      return (d % e + e) % e;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int wrapDegrees(int i) {
+      int j = i % 360;
+      if (j >= 180) {
+         j -= 360;
+      }
+
+      if (j < -180) {
+         j += 360;
+      }
+
+      return j;
+   }
+
+   public static float wrapDegrees(float f) {
+      float g = f % 360.0F;
+      if (g >= 180.0F) {
+         g -= 360.0F;
+      }
+
+      if (g < -180.0F) {
+         g += 360.0F;
+      }
+
+      return g;
+   }
+
+   public static double wrapDegrees(double d) {
+      double e = d % 360.0;
+      if (e >= 180.0) {
+         e -= 360.0;
+      }
+
+      if (e < -180.0) {
+         e += 360.0;
+      }
+
+      return e;
+   }
+
+   public static float subtractAngles(float start, float end) {
+      return wrapDegrees(end - start);
+   }
+
+   public static float angleBetween(float first, float second) {
+      return abs(subtractAngles(first, second));
+   }
+
+   public static float stepAngleTowards(float from, float to, float step) {
+      float i = subtractAngles(from, to);
+      float j = clamp(i, -step, step);
+      return to - j;
+   }
+
+   public static float stepTowards(float from, float to, float step) {
+      step = abs(step);
+      return from < to ? clamp(from + step, from, to) : clamp(from - step, to, from);
+   }
+
+   public static float stepUnwrappedAngleTowards(float from, float to, float step) {
+      float i = subtractAngles(from, to);
+      return stepTowards(from, from + i, step);
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int parseInt(String string, int fallback) {
+      return NumberUtils.toInt(string, fallback);
+   }
+
+   public static int smallestEncompassingPowerOfTwo(int value) {
+      int j = value - 1;
+      j |= j >> 1;
+      j |= j >> 2;
+      j |= j >> 4;
+      j |= j >> 8;
+      j |= j >> 16;
+      return j + 1;
+   }
+
+   public static boolean isPowerOfTwo(int i) {
+      return i != 0 && (i & i - 1) == 0;
+   }
+
+   public static int log2DeBruijn(int i) {
+      i = isPowerOfTwo(i) ? i : smallestEncompassingPowerOfTwo(i);
+      return MULTIPLY_DE_BRUIJN_BIT_POSITION[(int)((long)i * 125613361L >> 27) & 31];
+   }
+
+   public static int log2(int i) {
+      return log2DeBruijn(i) - (isPowerOfTwo(i) ? 0 : 1);
+   }
+
+   public static int roundUpToMultiple(int value, int divisor) {
+      if (divisor == 0) {
+         return 0;
+      } else if (value == 0) {
+         return divisor;
+      } else {
+         if (value < 0) {
+            divisor *= -1;
+         }
+
+         int k = value % divisor;
+         return k == 0 ? value : value + divisor - k;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int packRgb(float r, float g, float b) {
+      return packRgb(floor(r * 255.0F), floor(g * 255.0F), floor(b * 255.0F));
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int packRgb(int r, int g, int b) {
+      int l = (r << 8) + g;
+      return (l << 8) + b;
+   }
+
+   public static float fractionalPart(float value) {
+      return value - (float)floor(value);
+   }
+
+   public static double fractionalPart(double value) {
+      return value - (double)lfloor(value);
+   }
+
+   public static long hashCode(Vec3i vec) {
+      return hashCode(vec.getX(), vec.getY(), vec.getZ());
+   }
+
+   public static long hashCode(int x, int y, int z) {
+      long l = (long)(x * 3129871) ^ (long)z * 116129781L ^ (long)y;
+      l = l * l * 42317861L + l * 11L;
+      return l >> 16;
+   }
+
+   public static UUID randomUuid(Random random) {
+      long l = random.nextLong() & -61441L | 16384L;
+      long m = random.nextLong() & 4611686018427387903L | Long.MIN_VALUE;
+      return new UUID(l, m);
+   }
+
+   public static UUID randomUuid() {
+      return randomUuid(RANDOM);
+   }
+
+   public static double getLerpProgress(double value, double start, double end) {
+      return (value - start) / (end - start);
+   }
+
+   public static double atan2(double y, double x) {
+      double f = x * x + y * y;
+      if (Double.isNaN(f)) {
+         return Double.NaN;
+      } else {
+         boolean bl = y < 0.0;
+         if (bl) {
+            y = -y;
+         }
+
+         boolean bl2 = x < 0.0;
+         if (bl2) {
+            x = -x;
+         }
+
+         boolean bl3 = y > x;
+         if (bl3) {
+            double g = x;
+            x = y;
+            y = g;
+         }
+
+         double h = fastInverseSqrt(f);
+         x *= h;
+         y *= h;
+         double i = SMALLEST_FRACTION_FREE_DOUBLE + y;
+         int j = (int)Double.doubleToRawLongBits(i);
+         double k = ARCSINE_TABLE[j];
+         double l = COSINE_TABLE[j];
+         double m = i - SMALLEST_FRACTION_FREE_DOUBLE;
+         double n = y * l - x * m;
+         double o = (6.0 + n * n) * n * 0.16666666666666666;
+         double p = k + o;
+         if (bl3) {
+            p = (Math.PI / 2) - p;
+         }
+
+         if (bl2) {
+            p = Math.PI - p;
+         }
+
+         if (bl) {
+            p = -p;
+         }
+
+         return p;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static float fastInverseSqrt(float x) {
+      float g = 0.5F * x;
+      int i = Float.floatToIntBits(x);
+      i = 1597463007 - (i >> 1);
+      x = Float.intBitsToFloat(i);
+      return x * (1.5F - g * x * x);
+   }
+
+   public static double fastInverseSqrt(double x) {
+      double e = 0.5 * x;
+      long l = Double.doubleToRawLongBits(x);
+      l = 6910469410427058090L - (l >> 1);
+      x = Double.longBitsToDouble(l);
+      return x * (1.5 - e * x * x);
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static float fastInverseCbrt(float x) {
+      int i = Float.floatToIntBits(x);
+      i = 1419967116 - i / 3;
+      float g = Float.intBitsToFloat(i);
+      g = 0.6666667F * g + 1.0F / (3.0F * g * g * x);
+      return 0.6666667F * g + 1.0F / (3.0F * g * g * x);
+   }
+
+   public static int hsvToRgb(float hue, float saturation, float value) {
+      int i = (int)(hue * 6.0F) % 6;
+      float j = hue * 6.0F - (float)i;
+      float k = value * (1.0F - saturation);
+      float l = value * (1.0F - j * saturation);
+      float m = value * (1.0F - (1.0F - j) * saturation);
+      float n;
+      float o;
+      float p;
+      switch (i) {
+         case 0:
+            n = value;
+            o = m;
+            p = k;
+            break;
+         case 1:
+            n = l;
+            o = value;
+            p = k;
+            break;
+         case 2:
+            n = k;
+            o = value;
+            p = m;
+            break;
+         case 3:
+            n = k;
+            o = l;
+            p = value;
+            break;
+         case 4:
+            n = m;
+            o = k;
+            p = value;
+            break;
+         case 5:
+            n = value;
+            o = k;
+            p = l;
+            break;
+         default:
+            throw new RuntimeException("Something went wrong when converting from HSV to RGB. Input was " + hue + ", " + saturation + ", " + value);
+      }
+
+      int ai = clamp((int)(n * 255.0F), 0, 255);
+      int aj = clamp((int)(o * 255.0F), 0, 255);
+      int ak = clamp((int)(p * 255.0F), 0, 255);
+      return ai << 16 | aj << 8 | ak;
+   }
+
+   public static int idealHash(int i) {
+      i ^= i >>> 16;
+      i *= -2048144789;
+      i ^= i >>> 13;
+      i *= -1028477387;
+      return i ^ i >>> 16;
+   }
+
+   public static int binarySearch(int start, int end, IntPredicate leftPredicate) {
+      int k = end - start;
+
+      while (k > 0) {
+         int l = k / 2;
+         int m = start + l;
+         if (leftPredicate.test(m)) {
+            k = l;
+         } else {
+            start = m + 1;
+            k -= l + 1;
+         }
+      }
+
+      return start;
+   }
+
+   public static float lerp(float delta, float start, float end) {
+      return start + delta * (end - start);
+   }
+
+   public static double lerp(double delta, double start, double end) {
+      return start + delta * (end - start);
+   }
+
+   public static double lerp2(double deltaX, double deltaY, double val00, double val10, double val01, double val11) {
+      return lerp(deltaY, lerp(deltaX, val00, val10), lerp(deltaX, val01, val11));
+   }
+
+   public static double lerp3(
+      double deltaX,
+      double deltaY,
+      double deltaZ,
+      double val000,
+      double val100,
+      double val010,
+      double val110,
+      double val001,
+      double val101,
+      double val011,
+      double val111
+   ) {
+      return lerp(deltaZ, lerp2(deltaX, deltaY, val000, val100, val010, val110), lerp2(deltaX, deltaY, val001, val101, val011, val111));
+   }
+
+   public static double perlinFade(double d) {
+      return d * d * d * (d * (d * 6.0 - 15.0) + 10.0);
+   }
+
+   public static int sign(double d) {
+      if (d == 0.0) {
+         return 0;
+      } else {
+         return d > 0.0 ? 1 : -1;
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static float lerpAngleDegrees(float delta, float start, float end) {
+      return start + delta * wrapDegrees(end - start);
+   }
+
+   @Deprecated
+   public static float lerpAngle(float start, float end, float delta) {
+      float i = end - start;
+
+      while (i < -180.0F) {
+         i += 360.0F;
+      }
+
+      while (i >= 180.0F) {
+         i -= 360.0F;
+      }
+
+      return start + delta * i;
+   }
+
+   @Deprecated
+   @Environment(EnvType.CLIENT)
+   public static float fwrapDegrees(double degrees) {
+      while (degrees >= 180.0) {
+         degrees -= 360.0;
+      }
+
+      while (degrees < -180.0) {
+         degrees += 360.0;
+      }
+
+      return (float)degrees;
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static float method_24504(float f, float g) {
+      return (Math.abs(f % g - g * 0.5F) - g * 0.25F) / (g * 0.25F);
+   }
+
+   public static float square(float n) {
+      return n * n;
+   }
+
+   static {
+      for (int i = 0; i < 257; i++) {
+         double d = (double)i / 256.0;
+         double e = Math.asin(d);
+         COSINE_TABLE[i] = Math.cos(e);
+         ARCSINE_TABLE[i] = e;
+      }
+   }
+}

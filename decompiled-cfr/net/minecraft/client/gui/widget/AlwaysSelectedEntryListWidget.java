@@ -1,0 +1,39 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.gui.widget;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.widget.EntryListWidget;
+
+public abstract class AlwaysSelectedEntryListWidget<E extends EntryListWidget.Entry<E>>
+extends EntryListWidget<E> {
+    private boolean inFocus;
+
+    public AlwaysSelectedEntryListWidget(MinecraftClient minecraftClient, int n, int n2, int n3, int n4, int n5) {
+        super(minecraftClient, n, n2, n3, n4, n5);
+    }
+
+    @Override
+    public boolean changeFocus(boolean lookForwards) {
+        if (!this.inFocus && this.getItemCount() == 0) {
+            return false;
+        }
+        boolean bl = this.inFocus = !this.inFocus;
+        if (this.inFocus && this.getSelected() == null && this.getItemCount() > 0) {
+            this.moveSelection(EntryListWidget.MoveDirection.DOWN);
+        } else if (this.inFocus && this.getSelected() != null) {
+            this.method_30015();
+        }
+        return this.inFocus;
+    }
+
+    public static abstract class Entry<E extends Entry<E>>
+    extends EntryListWidget.Entry<E> {
+        @Override
+        public boolean changeFocus(boolean lookForwards) {
+            return false;
+        }
+    }
+}
+

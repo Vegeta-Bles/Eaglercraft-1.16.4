@@ -1,0 +1,59 @@
+package net.minecraft.block;
+
+import java.util.Random;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.block.entity.BlastFurnaceBlockEntity;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.screen.NamedScreenHandlerFactory;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.stat.Stats;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
+
+public class BlastFurnaceBlock extends AbstractFurnaceBlock {
+   protected BlastFurnaceBlock(AbstractBlock.Settings arg) {
+      super(arg);
+   }
+
+   @Override
+   public BlockEntity createBlockEntity(BlockView world) {
+      return new BlastFurnaceBlockEntity();
+   }
+
+   @Override
+   protected void openScreen(World world, BlockPos pos, PlayerEntity player) {
+      BlockEntity lv = world.getBlockEntity(pos);
+      if (lv instanceof BlastFurnaceBlockEntity) {
+         player.openHandledScreen((NamedScreenHandlerFactory)lv);
+         player.incrementStat(Stats.INTERACT_WITH_BLAST_FURNACE);
+      }
+   }
+
+   @Environment(EnvType.CLIENT)
+   @Override
+   public void randomDisplayTick(BlockState state, World world, BlockPos pos, Random random) {
+      if (state.get(LIT)) {
+         double d = (double)pos.getX() + 0.5;
+         double e = (double)pos.getY();
+         double f = (double)pos.getZ() + 0.5;
+         if (random.nextDouble() < 0.1) {
+            world.playSound(d, e, f, SoundEvents.BLOCK_BLASTFURNACE_FIRE_CRACKLE, SoundCategory.BLOCKS, 1.0F, 1.0F, false);
+         }
+
+         Direction lv = state.get(FACING);
+         Direction.Axis lv2 = lv.getAxis();
+         double g = 0.52;
+         double h = random.nextDouble() * 0.6 - 0.3;
+         double i = lv2 == Direction.Axis.X ? (double)lv.getOffsetX() * 0.52 : h;
+         double j = random.nextDouble() * 9.0 / 16.0;
+         double k = lv2 == Direction.Axis.Z ? (double)lv.getOffsetZ() * 0.52 : h;
+         world.addParticle(ParticleTypes.SMOKE, d + i, e + j, f + k, 0.0, 0.0, 0.0);
+      }
+   }
+}

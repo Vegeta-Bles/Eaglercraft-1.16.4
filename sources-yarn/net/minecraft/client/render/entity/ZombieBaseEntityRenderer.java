@@ -1,0 +1,26 @@
+package net.minecraft.client.render.entity;
+
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.client.render.entity.feature.ArmorFeatureRenderer;
+import net.minecraft.client.render.entity.model.ZombieEntityModel;
+import net.minecraft.entity.mob.ZombieEntity;
+import net.minecraft.util.Identifier;
+
+@Environment(EnvType.CLIENT)
+public abstract class ZombieBaseEntityRenderer<T extends ZombieEntity, M extends ZombieEntityModel<T>> extends BipedEntityRenderer<T, M> {
+   private static final Identifier TEXTURE = new Identifier("textures/entity/zombie/zombie.png");
+
+   protected ZombieBaseEntityRenderer(EntityRenderDispatcher dispatcher, M arg2, M arg3, M arg4) {
+      super(dispatcher, arg2, 0.5F);
+      this.addFeature(new ArmorFeatureRenderer<>(this, arg3, arg4));
+   }
+
+   public Identifier getTexture(ZombieEntity arg) {
+      return TEXTURE;
+   }
+
+   protected boolean isShaking(T arg) {
+      return arg.isConvertingInWater();
+   }
+}

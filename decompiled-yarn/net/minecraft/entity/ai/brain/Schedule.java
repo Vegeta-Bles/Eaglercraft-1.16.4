@@ -1,0 +1,60 @@
+package net.minecraft.entity.ai.brain;
+
+import com.google.common.collect.Maps;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import net.minecraft.util.registry.Registry;
+
+public class Schedule {
+   public static final Schedule EMPTY = register("empty").withActivity(0, Activity.IDLE).build();
+   public static final Schedule SIMPLE = register("simple").withActivity(5000, Activity.WORK).withActivity(11000, Activity.REST).build();
+   public static final Schedule VILLAGER_BABY = register("villager_baby")
+      .withActivity(10, Activity.IDLE)
+      .withActivity(3000, Activity.PLAY)
+      .withActivity(6000, Activity.IDLE)
+      .withActivity(10000, Activity.PLAY)
+      .withActivity(12000, Activity.REST)
+      .build();
+   public static final Schedule VILLAGER_DEFAULT = register("villager_default")
+      .withActivity(10, Activity.IDLE)
+      .withActivity(2000, Activity.WORK)
+      .withActivity(9000, Activity.MEET)
+      .withActivity(11000, Activity.IDLE)
+      .withActivity(12000, Activity.REST)
+      .build();
+   private final Map<Activity, ScheduleRule> scheduleRules = Maps.newHashMap();
+
+   public Schedule() {
+   }
+
+   protected static ScheduleBuilder register(String id) {
+      Schedule _snowman = Registry.register(Registry.SCHEDULE, id, new Schedule());
+      return new ScheduleBuilder(_snowman);
+   }
+
+   protected void addActivity(Activity activity) {
+      if (!this.scheduleRules.containsKey(activity)) {
+         this.scheduleRules.put(activity, new ScheduleRule());
+      }
+   }
+
+   protected ScheduleRule getRule(Activity activity) {
+      return this.scheduleRules.get(activity);
+   }
+
+   protected List<ScheduleRule> getOtherRules(Activity activity) {
+      return this.scheduleRules.entrySet().stream().filter(_snowmanx -> _snowmanx.getKey() != activity).map(Entry::getValue).collect(Collectors.toList());
+   }
+
+   public Activity getActivityForTime(int time) {
+      return this.scheduleRules
+         .entrySet()
+         .stream()
+         .max(Comparator.comparingDouble(_snowmanx -> (double)_snowmanx.getValue().getPriority(time)))
+         .map(Entry::getKey)
+         .orElse(Activity.IDLE);
+   }
+}

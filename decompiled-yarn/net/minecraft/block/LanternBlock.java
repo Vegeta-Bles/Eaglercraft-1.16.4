@@ -1,0 +1,97 @@
+package net.minecraft.block;
+
+import javax.annotation.Nullable;
+import net.minecraft.block.piston.PistonBehavior;
+import net.minecraft.entity.ai.pathing.NavigationType;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.WorldAccess;
+import net.minecraft.world.WorldView;
+
+public class LanternBlock extends Block implements Waterloggable {
+   public static final BooleanProperty HANGING = Properties.HANGING;
+   public static final BooleanProperty field_26441 = Properties.WATERLOGGED;
+   protected static final VoxelShape STANDING_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(5.0, 0.0, 5.0, 11.0, 7.0, 11.0), Block.createCuboidShape(6.0, 7.0, 6.0, 10.0, 9.0, 10.0)
+   );
+   protected static final VoxelShape HANGING_SHAPE = VoxelShapes.union(
+      Block.createCuboidShape(5.0, 1.0, 5.0, 11.0, 8.0, 11.0), Block.createCuboidShape(6.0, 8.0, 6.0, 10.0, 10.0, 10.0)
+   );
+
+   public LanternBlock(AbstractBlock.Settings _snowman) {
+      super(_snowman);
+      this.setDefaultState(this.stateManager.getDefaultState().with(HANGING, Boolean.valueOf(false)).with(field_26441, Boolean.valueOf(false)));
+   }
+
+   @Nullable
+   @Override
+   public BlockState getPlacementState(ItemPlacementContext ctx) {
+      FluidState _snowman = ctx.getWorld().getFluidState(ctx.getBlockPos());
+
+      for (Direction _snowmanx : ctx.getPlacementDirections()) {
+         if (_snowmanx.getAxis() == Direction.Axis.Y) {
+            BlockState _snowmanxx = this.getDefaultState().with(HANGING, Boolean.valueOf(_snowmanx == Direction.UP));
+            if (_snowmanxx.canPlaceAt(ctx.getWorld(), ctx.getBlockPos())) {
+               return _snowmanxx.with(field_26441, Boolean.valueOf(_snowman.getFluid() == Fluids.WATER));
+            }
+         }
+      }
+
+      return null;
+   }
+
+   @Override
+   public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+      return state.get(HANGING) ? HANGING_SHAPE : STANDING_SHAPE;
+   }
+
+   @Override
+   protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
+      builder.add(HANGING, field_26441);
+   }
+
+   @Override
+   public boolean canPlaceAt(BlockState state, WorldView world, BlockPos pos) {
+      Direction _snowman = attachedDirection(state).getOpposite();
+      return Block.sideCoversSmallSquare(world, pos.offset(_snowman), _snowman.getOpposite());
+   }
+
+   protected static Direction attachedDirection(BlockState state) {
+      return state.get(HANGING) ? Direction.DOWN : Direction.UP;
+   }
+
+   @Override
+   public PistonBehavior getPistonBehavior(BlockState state) {
+      return PistonBehavior.DESTROY;
+   }
+
+   @Override
+   public BlockState getStateForNeighborUpdate(BlockState state, Direction direction, BlockState newState, WorldAccess world, BlockPos pos, BlockPos posFrom) {
+      if (state.get(field_26441)) {
+         world.getFluidTickScheduler().schedule(pos, Fluids.WATER, Fluids.WATER.getTickRate(world));
+      }
+
+      return attachedDirection(state).getOpposite() == direction && !state.canPlaceAt(world, pos)
+         ? Blocks.AIR.getDefaultState()
+         : super.getStateForNeighborUpdate(state, direction, newState, world, pos, posFrom);
+   }
+
+   @Override
+   public FluidState getFluidState(BlockState state) {
+      return state.get(field_26441) ? Fluids.WATER.getStill(false) : super.getFluidState(state);
+   }
+
+   @Override
+   public boolean canPathfindThrough(BlockState state, BlockView world, BlockPos pos, NavigationType type) {
+      return false;
+   }
+}

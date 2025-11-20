@@ -1,0 +1,247 @@
+package net.minecraft.world.gen.feature;
+
+import com.mojang.serialization.Codec;
+import java.util.Random;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.Material;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.StructureWorldAccess;
+import net.minecraft.world.WorldAccess;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+
+public class IcebergFeature extends Feature<SingleStateFeatureConfig> {
+   public IcebergFeature(Codec<SingleStateFeatureConfig> codec) {
+      super(codec);
+   }
+
+   public boolean generate(StructureWorldAccess arg, ChunkGenerator arg2, Random random, BlockPos arg3, SingleStateFeatureConfig arg4) {
+      arg3 = new BlockPos(arg3.getX(), arg2.getSeaLevel(), arg3.getZ());
+      boolean bl = random.nextDouble() > 0.7;
+      BlockState lv = arg4.state;
+      double d = random.nextDouble() * 2.0 * Math.PI;
+      int i = 11 - random.nextInt(5);
+      int j = 3 + random.nextInt(3);
+      boolean bl2 = random.nextDouble() > 0.7;
+      int k = 11;
+      int l = bl2 ? random.nextInt(6) + 6 : random.nextInt(15) + 3;
+      if (!bl2 && random.nextDouble() > 0.9) {
+         l += random.nextInt(19) + 7;
+      }
+
+      int m = Math.min(l + random.nextInt(11), 18);
+      int n = Math.min(l + random.nextInt(7) - random.nextInt(5), 11);
+      int o = bl2 ? i : 11;
+
+      for (int p = -o; p < o; p++) {
+         for (int q = -o; q < o; q++) {
+            for (int r = 0; r < l; r++) {
+               int s = bl2 ? this.method_13417(r, l, n) : this.method_13419(random, r, l, n);
+               if (bl2 || p < s) {
+                  this.method_13426(arg, random, arg3, l, p, r, q, s, o, bl2, j, d, bl, lv);
+               }
+            }
+         }
+      }
+
+      this.method_13418(arg, arg3, n, l, bl2, i);
+
+      for (int t = -o; t < o; t++) {
+         for (int u = -o; u < o; u++) {
+            for (int v = -1; v > -m; v--) {
+               int w = bl2 ? MathHelper.ceil((float)o * (1.0F - (float)Math.pow((double)v, 2.0) / ((float)m * 8.0F))) : o;
+               int x = this.method_13427(random, -v, m, n);
+               if (t < x) {
+                  this.method_13426(arg, random, arg3, m, t, v, u, x, w, bl2, j, d, bl, lv);
+               }
+            }
+         }
+      }
+
+      boolean bl3 = bl2 ? random.nextDouble() > 0.1 : random.nextDouble() > 0.7;
+      if (bl3) {
+         this.method_13428(random, arg, n, l, arg3, bl2, i, d, j);
+      }
+
+      return true;
+   }
+
+   private void method_13428(Random random, WorldAccess arg, int i, int j, BlockPos arg2, boolean bl, int k, double d, int l) {
+      int m = random.nextBoolean() ? -1 : 1;
+      int n = random.nextBoolean() ? -1 : 1;
+      int o = random.nextInt(Math.max(i / 2 - 2, 1));
+      if (random.nextBoolean()) {
+         o = i / 2 + 1 - random.nextInt(Math.max(i - i / 2 - 1, 1));
+      }
+
+      int p = random.nextInt(Math.max(i / 2 - 2, 1));
+      if (random.nextBoolean()) {
+         p = i / 2 + 1 - random.nextInt(Math.max(i - i / 2 - 1, 1));
+      }
+
+      if (bl) {
+         o = p = random.nextInt(Math.max(k - 5, 1));
+      }
+
+      BlockPos lv = new BlockPos(m * o, 0, n * p);
+      double e = bl ? d + (Math.PI / 2) : random.nextDouble() * 2.0 * Math.PI;
+
+      for (int q = 0; q < j - 3; q++) {
+         int r = this.method_13419(random, q, j, i);
+         this.method_13415(r, q, arg2, arg, false, e, lv, k, l);
+      }
+
+      for (int s = -1; s > -j + random.nextInt(5); s--) {
+         int t = this.method_13427(random, -s, j, i);
+         this.method_13415(t, s, arg2, arg, true, e, lv, k, l);
+      }
+   }
+
+   private void method_13415(int i, int j, BlockPos arg, WorldAccess arg2, boolean bl, double d, BlockPos arg3, int k, int l) {
+      int m = i + 1 + k / 3;
+      int n = Math.min(i - 3, 3) + l / 2 - 1;
+
+      for (int o = -m; o < m; o++) {
+         for (int p = -m; p < m; p++) {
+            double e = this.method_13424(o, p, arg3, m, n, d);
+            if (e < 0.0) {
+               BlockPos lv = arg.add(o, j, p);
+               Block lv2 = arg2.getBlockState(lv).getBlock();
+               if (this.isSnowyOrIcy(lv2) || lv2 == Blocks.SNOW_BLOCK) {
+                  if (bl) {
+                     this.setBlockState(arg2, lv, Blocks.WATER.getDefaultState());
+                  } else {
+                     this.setBlockState(arg2, lv, Blocks.AIR.getDefaultState());
+                     this.clearSnowAbove(arg2, lv);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   private void clearSnowAbove(WorldAccess world, BlockPos pos) {
+      if (world.getBlockState(pos.up()).isOf(Blocks.SNOW)) {
+         this.setBlockState(world, pos.up(), Blocks.AIR.getDefaultState());
+      }
+   }
+
+   private void method_13426(
+      WorldAccess arg, Random random, BlockPos arg2, int i, int j, int k, int l, int m, int n, boolean bl, int o, double d, boolean bl2, BlockState arg3
+   ) {
+      double e = bl ? this.method_13424(j, l, BlockPos.ORIGIN, n, this.method_13416(k, i, o), d) : this.method_13421(j, l, BlockPos.ORIGIN, m, random);
+      if (e < 0.0) {
+         BlockPos lv = arg2.add(j, k, l);
+         double f = bl ? -0.5 : (double)(-6 - random.nextInt(3));
+         if (e > f && random.nextDouble() > 0.9) {
+            return;
+         }
+
+         this.method_13425(lv, arg, random, i - k, i, bl, bl2, arg3);
+      }
+   }
+
+   private void method_13425(BlockPos arg, WorldAccess arg2, Random random, int i, int j, boolean bl, boolean bl2, BlockState arg3) {
+      BlockState lv = arg2.getBlockState(arg);
+      if (lv.getMaterial() == Material.AIR || lv.isOf(Blocks.SNOW_BLOCK) || lv.isOf(Blocks.ICE) || lv.isOf(Blocks.WATER)) {
+         boolean bl3 = !bl || random.nextDouble() > 0.05;
+         int k = bl ? 3 : 2;
+         if (bl2 && !lv.isOf(Blocks.WATER) && (double)i <= (double)random.nextInt(Math.max(1, j / k)) + (double)j * 0.6 && bl3) {
+            this.setBlockState(arg2, arg, Blocks.SNOW_BLOCK.getDefaultState());
+         } else {
+            this.setBlockState(arg2, arg, arg3);
+         }
+      }
+   }
+
+   private int method_13416(int i, int j, int k) {
+      int l = k;
+      if (i > 0 && j - i <= 3) {
+         l = k - (4 - (j - i));
+      }
+
+      return l;
+   }
+
+   private double method_13421(int i, int j, BlockPos arg, int k, Random random) {
+      float f = 10.0F * MathHelper.clamp(random.nextFloat(), 0.2F, 0.8F) / (float)k;
+      return (double)f + Math.pow((double)(i - arg.getX()), 2.0) + Math.pow((double)(j - arg.getZ()), 2.0) - Math.pow((double)k, 2.0);
+   }
+
+   private double method_13424(int i, int j, BlockPos arg, int k, int l, double d) {
+      return Math.pow(((double)(i - arg.getX()) * Math.cos(d) - (double)(j - arg.getZ()) * Math.sin(d)) / (double)k, 2.0)
+         + Math.pow(((double)(i - arg.getX()) * Math.sin(d) + (double)(j - arg.getZ()) * Math.cos(d)) / (double)l, 2.0)
+         - 1.0;
+   }
+
+   private int method_13419(Random random, int i, int j, int k) {
+      float f = 3.5F - random.nextFloat();
+      float g = (1.0F - (float)Math.pow((double)i, 2.0) / ((float)j * f)) * (float)k;
+      if (j > 15 + random.nextInt(5)) {
+         int l = i < 3 + random.nextInt(6) ? i / 2 : i;
+         g = (1.0F - (float)l / ((float)j * f * 0.4F)) * (float)k;
+      }
+
+      return MathHelper.ceil(g / 2.0F);
+   }
+
+   private int method_13417(int i, int j, int k) {
+      float f = 1.0F;
+      float g = (1.0F - (float)Math.pow((double)i, 2.0) / ((float)j * 1.0F)) * (float)k;
+      return MathHelper.ceil(g / 2.0F);
+   }
+
+   private int method_13427(Random random, int i, int j, int k) {
+      float f = 1.0F + random.nextFloat() / 2.0F;
+      float g = (1.0F - (float)i / ((float)j * f)) * (float)k;
+      return MathHelper.ceil(g / 2.0F);
+   }
+
+   private boolean isSnowyOrIcy(Block block) {
+      return block == Blocks.PACKED_ICE || block == Blocks.SNOW_BLOCK || block == Blocks.BLUE_ICE;
+   }
+
+   private boolean isAirBelow(BlockView world, BlockPos pos) {
+      return world.getBlockState(pos.down()).getMaterial() == Material.AIR;
+   }
+
+   private void method_13418(WorldAccess world, BlockPos pos, int i, int j, boolean bl, int k) {
+      int l = bl ? k : i / 2;
+
+      for (int m = -l; m <= l; m++) {
+         for (int n = -l; n <= l; n++) {
+            for (int o = 0; o <= j; o++) {
+               BlockPos lv = pos.add(m, o, n);
+               Block lv2 = world.getBlockState(lv).getBlock();
+               if (this.isSnowyOrIcy(lv2) || lv2 == Blocks.SNOW) {
+                  if (this.isAirBelow(world, lv)) {
+                     this.setBlockState(world, lv, Blocks.AIR.getDefaultState());
+                     this.setBlockState(world, lv.up(), Blocks.AIR.getDefaultState());
+                  } else if (this.isSnowyOrIcy(lv2)) {
+                     Block[] lvs = new Block[]{
+                        world.getBlockState(lv.west()).getBlock(),
+                        world.getBlockState(lv.east()).getBlock(),
+                        world.getBlockState(lv.north()).getBlock(),
+                        world.getBlockState(lv.south()).getBlock()
+                     };
+                     int p = 0;
+
+                     for (Block lv3 : lvs) {
+                        if (!this.isSnowyOrIcy(lv3)) {
+                           p++;
+                        }
+                     }
+
+                     if (p >= 3) {
+                        this.setBlockState(world, lv, Blocks.AIR.getDefaultState());
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+}

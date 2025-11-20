@@ -1,0 +1,52 @@
+package net.minecraft.client.gui.widget;
+
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
+
+public class CheckboxWidget extends AbstractPressableButtonWidget {
+   private static final Identifier TEXTURE = new Identifier("textures/gui/checkbox.png");
+   private boolean checked;
+   private final boolean field_24253;
+
+   public CheckboxWidget(int x, int y, int width, int height, Text _snowman, boolean checked) {
+      this(x, y, width, height, _snowman, checked, true);
+   }
+
+   public CheckboxWidget(int _snowman, int _snowman, int _snowman, int _snowman, Text _snowman, boolean _snowman, boolean _snowman) {
+      super(_snowman, _snowman, _snowman, _snowman, _snowman);
+      this.checked = _snowman;
+      this.field_24253 = _snowman;
+   }
+
+   @Override
+   public void onPress() {
+      this.checked = !this.checked;
+   }
+
+   public boolean isChecked() {
+      return this.checked;
+   }
+
+   @Override
+   public void renderButton(MatrixStack matrices, int mouseX, int mouseY, float delta) {
+      MinecraftClient _snowman = MinecraftClient.getInstance();
+      _snowman.getTextureManager().bindTexture(TEXTURE);
+      RenderSystem.enableDepthTest();
+      TextRenderer _snowmanx = _snowman.textRenderer;
+      RenderSystem.color4f(1.0F, 1.0F, 1.0F, this.alpha);
+      RenderSystem.enableBlend();
+      RenderSystem.defaultBlendFunc();
+      RenderSystem.blendFunc(GlStateManager.SrcFactor.SRC_ALPHA, GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA);
+      drawTexture(matrices, this.x, this.y, this.isFocused() ? 20.0F : 0.0F, this.checked ? 20.0F : 0.0F, 20, this.height, 64, 64);
+      this.renderBg(matrices, _snowman, mouseX, mouseY);
+      if (this.field_24253) {
+         drawTextWithShadow(matrices, _snowmanx, this.getMessage(), this.x + 24, this.y + (this.height - 8) / 2, 14737632 | MathHelper.ceil(this.alpha * 255.0F) << 24);
+      }
+   }
+}

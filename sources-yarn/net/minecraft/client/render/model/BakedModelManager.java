@@ -1,0 +1,107 @@
+package net.minecraft.client.render.model;
+
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import java.util.Map;
+import javax.annotation.Nullable;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.block.BlockState;
+import net.minecraft.client.color.block.BlockColors;
+import net.minecraft.client.render.block.BlockModels;
+import net.minecraft.client.texture.SpriteAtlasTexture;
+import net.minecraft.client.texture.TextureManager;
+import net.minecraft.client.util.ModelIdentifier;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.resource.ResourceManager;
+import net.minecraft.resource.SinglePreparationResourceReloadListener;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.profiler.Profiler;
+
+@Environment(EnvType.CLIENT)
+public class BakedModelManager extends SinglePreparationResourceReloadListener<ModelLoader> implements AutoCloseable {
+   private Map<Identifier, BakedModel> models;
+   @Nullable
+   private SpriteAtlasManager atlasManager;
+   private final BlockModels blockModelCache;
+   private final TextureManager textureManager;
+   private final BlockColors colorMap;
+   private int mipmap;
+   private BakedModel missingModel;
+   private Object2IntMap<BlockState> stateLookup;
+
+   public BakedModelManager(TextureManager textureManager, BlockColors colorMap, int mipmap) {
+      this.textureManager = textureManager;
+      this.colorMap = colorMap;
+      this.mipmap = mipmap;
+      this.blockModelCache = new BlockModels(this);
+   }
+
+   public BakedModel getModel(ModelIdentifier id) {
+      return this.models.getOrDefault(id, this.missingModel);
+   }
+
+   public BakedModel getMissingModel() {
+      return this.missingModel;
+   }
+
+   public BlockModels getBlockModels() {
+      return this.blockModelCache;
+   }
+
+   protected ModelLoader prepare(ResourceManager arg, Profiler arg2) {
+      arg2.startTick();
+      ModelLoader lv = new ModelLoader(arg, this.colorMap, arg2, this.mipmap);
+      arg2.endTick();
+      return lv;
+   }
+
+   protected void apply(ModelLoader arg, ResourceManager arg2, Profiler arg3) {
+      arg3.startTick();
+      arg3.push("upload");
+      if (this.atlasManager != null) {
+         this.atlasManager.close();
+      }
+
+      this.atlasManager = arg.upload(this.textureManager, arg3);
+      this.models = arg.getBakedModelMap();
+      this.stateLookup = arg.getStateLookup();
+      this.missingModel = this.models.get(ModelLoader.MISSING);
+      arg3.swap("cache");
+      this.blockModelCache.reload();
+      arg3.pop();
+      arg3.endTick();
+   }
+
+   public boolean shouldRerender(BlockState from, BlockState to) {
+      if (from == to) {
+         return false;
+      } else {
+         int i = this.stateLookup.getInt(from);
+         if (i != -1) {
+            int j = this.stateLookup.getInt(to);
+            if (i == j) {
+               FluidState lv = from.getFluidState();
+               FluidState lv2 = to.getFluidState();
+               return lv != lv2;
+            }
+         }
+
+         return true;
+      }
+   }
+
+   public SpriteAtlasTexture method_24153(Identifier arg) {
+      return this.atlasManager.getAtlas(arg);
+   }
+
+   @Override
+   public void close() {
+      if (this.atlasManager != null) {
+         this.atlasManager.close();
+      }
+   }
+
+   public void resetMipmapLevels(int i) {
+      this.mipmap = i;
+   }
+}

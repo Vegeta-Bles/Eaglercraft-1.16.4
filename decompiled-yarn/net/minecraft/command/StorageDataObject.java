@@ -1,0 +1,78 @@
+package net.minecraft.command;
+
+import com.mojang.brigadier.builder.ArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
+import java.util.Locale;
+import java.util.function.Function;
+import net.minecraft.command.argument.IdentifierArgumentType;
+import net.minecraft.command.argument.NbtPathArgumentType;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.DataCommand;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Identifier;
+
+public class StorageDataObject implements DataCommandObject {
+   private static final SuggestionProvider<ServerCommandSource> SUGGESTION_PROVIDER = (_snowman, _snowmanx) -> CommandSource.suggestIdentifiers(of(_snowman).getIds(), _snowmanx);
+   public static final Function<String, DataCommand.ObjectType> TYPE_FACTORY = _snowman -> new DataCommand.ObjectType() {
+         @Override
+         public DataCommandObject getObject(CommandContext<ServerCommandSource> context) {
+            return new StorageDataObject(StorageDataObject.of(context), IdentifierArgumentType.getIdentifier(context, _snowman));
+         }
+
+         @Override
+         public ArgumentBuilder<ServerCommandSource, ?> addArgumentsToBuilder(
+            ArgumentBuilder<ServerCommandSource, ?> argument,
+            Function<ArgumentBuilder<ServerCommandSource, ?>, ArgumentBuilder<ServerCommandSource, ?>> argumentAdder
+         ) {
+            return argument.then(
+               CommandManager.literal("storage")
+                  .then(
+                     (ArgumentBuilder)argumentAdder.apply(
+                        CommandManager.argument(_snowman, IdentifierArgumentType.identifier()).suggests(StorageDataObject.SUGGESTION_PROVIDER)
+                     )
+                  )
+            );
+         }
+      };
+   private final DataCommandStorage storage;
+   private final Identifier id;
+
+   private static DataCommandStorage of(CommandContext<ServerCommandSource> _snowman) {
+      return ((ServerCommandSource)_snowman.getSource()).getMinecraftServer().getDataCommandStorage();
+   }
+
+   private StorageDataObject(DataCommandStorage storage, Identifier id) {
+      this.storage = storage;
+      this.id = id;
+   }
+
+   @Override
+   public void setTag(CompoundTag tag) {
+      this.storage.set(this.id, tag);
+   }
+
+   @Override
+   public CompoundTag getTag() {
+      return this.storage.get(this.id);
+   }
+
+   @Override
+   public Text feedbackModify() {
+      return new TranslatableText("commands.data.storage.modified", this.id);
+   }
+
+   @Override
+   public Text feedbackQuery(Tag tag) {
+      return new TranslatableText("commands.data.storage.query", this.id, tag.toText());
+   }
+
+   @Override
+   public Text feedbackGet(NbtPathArgumentType.NbtPath _snowman, double scale, int result) {
+      return new TranslatableText("commands.data.storage.get", _snowman, this.id, String.format(Locale.ROOT, "%.2f", scale), result);
+   }
+}

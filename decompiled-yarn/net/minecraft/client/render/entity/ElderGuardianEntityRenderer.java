@@ -1,0 +1,23 @@
+package net.minecraft.client.render.entity;
+
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.mob.ElderGuardianEntity;
+import net.minecraft.entity.mob.GuardianEntity;
+import net.minecraft.util.Identifier;
+
+public class ElderGuardianEntityRenderer extends GuardianEntityRenderer {
+   public static final Identifier TEXTURE = new Identifier("textures/entity/guardian_elder.png");
+
+   public ElderGuardianEntityRenderer(EntityRenderDispatcher _snowman) {
+      super(_snowman, 1.2F);
+   }
+
+   protected void scale(GuardianEntity _snowman, MatrixStack _snowman, float _snowman) {
+      _snowman.scale(ElderGuardianEntity.SCALE, ElderGuardianEntity.SCALE, ElderGuardianEntity.SCALE);
+   }
+
+   @Override
+   public Identifier getTexture(GuardianEntity _snowman) {
+      return TEXTURE;
+   }
+}

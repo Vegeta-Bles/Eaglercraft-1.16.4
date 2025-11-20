@@ -1,0 +1,95 @@
+package net.minecraft.client.network;
+
+import com.google.common.collect.Maps;
+import java.util.Map;
+import java.util.Map.Entry;
+import javax.annotation.Nullable;
+import net.minecraft.advancement.Advancement;
+import net.minecraft.advancement.AdvancementManager;
+import net.minecraft.advancement.AdvancementProgress;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.toast.AdvancementToast;
+import net.minecraft.network.packet.c2s.play.AdvancementTabC2SPacket;
+import net.minecraft.network.packet.s2c.play.AdvancementUpdateS2CPacket;
+import net.minecraft.util.Identifier;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class ClientAdvancementManager {
+   private static final Logger LOGGER = LogManager.getLogger();
+   private final MinecraftClient client;
+   private final AdvancementManager manager = new AdvancementManager();
+   private final Map<Advancement, AdvancementProgress> advancementProgresses = Maps.newHashMap();
+   @Nullable
+   private ClientAdvancementManager.Listener listener;
+   @Nullable
+   private Advancement selectedTab;
+
+   public ClientAdvancementManager(MinecraftClient client) {
+      this.client = client;
+   }
+
+   public void onAdvancements(AdvancementUpdateS2CPacket packet) {
+      if (packet.shouldClearCurrent()) {
+         this.manager.clear();
+         this.advancementProgresses.clear();
+      }
+
+      this.manager.removeAll(packet.getAdvancementIdsToRemove());
+      this.manager.load(packet.getAdvancementsToEarn());
+
+      for (Entry<Identifier, AdvancementProgress> _snowman : packet.getAdvancementsToProgress().entrySet()) {
+         Advancement _snowmanx = this.manager.get(_snowman.getKey());
+         if (_snowmanx != null) {
+            AdvancementProgress _snowmanxx = _snowman.getValue();
+            _snowmanxx.init(_snowmanx.getCriteria(), _snowmanx.getRequirements());
+            this.advancementProgresses.put(_snowmanx, _snowmanxx);
+            if (this.listener != null) {
+               this.listener.setProgress(_snowmanx, _snowmanxx);
+            }
+
+            if (!packet.shouldClearCurrent() && _snowmanxx.isDone() && _snowmanx.getDisplay() != null && _snowmanx.getDisplay().shouldShowToast()) {
+               this.client.getToastManager().add(new AdvancementToast(_snowmanx));
+            }
+         } else {
+            LOGGER.warn("Server informed client about progress for unknown advancement {}", _snowman.getKey());
+         }
+      }
+   }
+
+   public AdvancementManager getManager() {
+      return this.manager;
+   }
+
+   public void selectTab(@Nullable Advancement tab, boolean local) {
+      ClientPlayNetworkHandler _snowman = this.client.getNetworkHandler();
+      if (_snowman != null && tab != null && local) {
+         _snowman.sendPacket(AdvancementTabC2SPacket.open(tab));
+      }
+
+      if (this.selectedTab != tab) {
+         this.selectedTab = tab;
+         if (this.listener != null) {
+            this.listener.selectTab(tab);
+         }
+      }
+   }
+
+   public void setListener(@Nullable ClientAdvancementManager.Listener listener) {
+      this.listener = listener;
+      this.manager.setListener(listener);
+      if (listener != null) {
+         for (Entry<Advancement, AdvancementProgress> _snowman : this.advancementProgresses.entrySet()) {
+            listener.setProgress(_snowman.getKey(), _snowman.getValue());
+         }
+
+         listener.selectTab(this.selectedTab);
+      }
+   }
+
+   public interface Listener extends AdvancementManager.Listener {
+      void setProgress(Advancement advancement, AdvancementProgress progress);
+
+      void selectTab(@Nullable Advancement advancement);
+   }
+}

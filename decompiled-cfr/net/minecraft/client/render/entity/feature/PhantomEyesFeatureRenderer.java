@@ -1,0 +1,26 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.entity.feature;
+
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.entity.feature.EyesFeatureRenderer;
+import net.minecraft.client.render.entity.feature.FeatureRendererContext;
+import net.minecraft.client.render.entity.model.PhantomEntityModel;
+import net.minecraft.entity.Entity;
+import net.minecraft.util.Identifier;
+
+public class PhantomEyesFeatureRenderer<T extends Entity>
+extends EyesFeatureRenderer<T, PhantomEntityModel<T>> {
+    private static final RenderLayer SKIN = RenderLayer.getEyes(new Identifier("textures/entity/phantom_eyes.png"));
+
+    public PhantomEyesFeatureRenderer(FeatureRendererContext<T, PhantomEntityModel<T>> featureRendererContext) {
+        super(featureRendererContext);
+    }
+
+    @Override
+    public RenderLayer getEyesTexture() {
+        return SKIN;
+    }
+}
+

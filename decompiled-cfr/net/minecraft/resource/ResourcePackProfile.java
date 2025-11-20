@@ -1,0 +1,180 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  com.mojang.brigadier.arguments.StringArgumentType
+ *  javax.annotation.Nullable
+ *  org.apache.logging.log4j.LogManager
+ *  org.apache.logging.log4j.Logger
+ */
+package net.minecraft.resource;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import java.io.IOException;
+import java.util.List;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import javax.annotation.Nullable;
+import net.minecraft.SharedConstants;
+import net.minecraft.resource.ResourcePack;
+import net.minecraft.resource.ResourcePackCompatibility;
+import net.minecraft.resource.ResourcePackSource;
+import net.minecraft.resource.metadata.PackResourceMetadata;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.LiteralText;
+import net.minecraft.text.Text;
+import net.minecraft.text.Texts;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Formatting;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class ResourcePackProfile
+implements AutoCloseable {
+    private static final Logger LOGGER = LogManager.getLogger();
+    private static final PackResourceMetadata BROKEN_PACK_META = new PackResourceMetadata(new TranslatableText("resourcePack.broken_assets").formatted(Formatting.RED, Formatting.ITALIC), SharedConstants.getGameVersion().getPackVersion());
+    private final String name;
+    private final Supplier<ResourcePack> packGetter;
+    private final Text displayName;
+    private final Text description;
+    private final ResourcePackCompatibility compatibility;
+    private final InsertionPosition position;
+    private final boolean alwaysEnabled;
+    private final boolean pinned;
+    private final ResourcePackSource source;
+
+    /*
+     * Enabled aggressive block sorting
+     * Enabled unnecessary exception pruning
+     * Enabled aggressive exception aggregation
+     */
+    @Nullable
+    public static ResourcePackProfile of(String name, boolean alwaysEnabled, Supplier<ResourcePack> packFactory, Factory containerFactory, InsertionPosition insertionPosition, ResourcePackSource resourcePackSource) {
+        try (ResourcePack resourcePack = packFactory.get();){
+            PackResourceMetadata packResourceMetadata = resourcePack.parseMetadata(PackResourceMetadata.READER);
+            if (alwaysEnabled && packResourceMetadata == null) {
+                LOGGER.error("Broken/missing pack.mcmeta detected, fudging it into existance. Please check that your launcher has downloaded all assets for the game correctly!");
+                packResourceMetadata = BROKEN_PACK_META;
+            }
+            if (packResourceMetadata != null) {
+                ResourcePackProfile resourcePackProfile = containerFactory.create(name, alwaysEnabled, packFactory, resourcePack, packResourceMetadata, insertionPosition, resourcePackSource);
+                return resourcePackProfile;
+            }
+            LOGGER.warn("Couldn't find pack meta for pack {}", (Object)name);
+            return null;
+        }
+        catch (IOException iOException) {
+            LOGGER.warn("Couldn't get pack info for: {}", (Object)iOException.toString());
+        }
+        return null;
+    }
+
+    public ResourcePackProfile(String name, boolean alwaysEnabled, Supplier<ResourcePack> packFactory, Text displayName, Text description, ResourcePackCompatibility compatibility, InsertionPosition direction, boolean pinned, ResourcePackSource source) {
+        this.name = name;
+        this.packGetter = packFactory;
+        this.displayName = displayName;
+        this.description = description;
+        this.compatibility = compatibility;
+        this.alwaysEnabled = alwaysEnabled;
+        this.position = direction;
+        this.pinned = pinned;
+        this.source = source;
+    }
+
+    public ResourcePackProfile(String name, boolean alwaysEnabled, Supplier<ResourcePack> packFactory, ResourcePack pack, PackResourceMetadata metadata, InsertionPosition direction, ResourcePackSource source) {
+        this(name, alwaysEnabled, packFactory, new LiteralText(pack.getName()), metadata.getDescription(), ResourcePackCompatibility.from(metadata.getPackFormat()), direction, false, source);
+    }
+
+    public Text getDisplayName() {
+        return this.displayName;
+    }
+
+    public Text getDescription() {
+        return this.description;
+    }
+
+    public Text getInformationText(boolean enabled) {
+        return Texts.bracketed(this.source.decorate(new LiteralText(this.name))).styled(style -> style.withColor(enabled ? Formatting.GREEN : Formatting.RED).withInsertion(StringArgumentType.escapeIfRequired((String)this.name)).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new LiteralText("").append(this.displayName).append("\n").append(this.description))));
+    }
+
+    public ResourcePackCompatibility getCompatibility() {
+        return this.compatibility;
+    }
+
+    public ResourcePack createResourcePack() {
+        return this.packGetter.get();
+    }
+
+    public String getName() {
+        return this.name;
+    }
+
+    public boolean isAlwaysEnabled() {
+        return this.alwaysEnabled;
+    }
+
+    public boolean isPinned() {
+        return this.pinned;
+    }
+
+    public InsertionPosition getInitialPosition() {
+        return this.position;
+    }
+
+    public ResourcePackSource getSource() {
+        return this.source;
+    }
+
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof ResourcePackProfile)) {
+            return false;
+        }
+        ResourcePackProfile resourcePackProfile = (ResourcePackProfile)o;
+        return this.name.equals(resourcePackProfile.name);
+    }
+
+    public int hashCode() {
+        return this.name.hashCode();
+    }
+
+    @Override
+    public void close() {
+    }
+
+    public static enum InsertionPosition {
+        TOP,
+        BOTTOM;
+
+
+        public <T> int insert(List<T> items, T item, Function<T, ResourcePackProfile> profileGetter, boolean listInverted) {
+            int n;
+            InsertionPosition insertionPosition;
+            InsertionPosition insertionPosition2 = insertionPosition = listInverted ? this.inverse() : this;
+            if (insertionPosition == BOTTOM) {
+                int n2;
+                for (n2 = 0; n2 < items.size() && (_snowman = profileGetter.apply(items.get(n2))).isPinned() && _snowman.getInitialPosition() == this; ++n2) {
+                }
+                items.add(n2, item);
+                return n2;
+            }
+            for (n = items.size() - 1; n >= 0 && (_snowman = profileGetter.apply(items.get(n))).isPinned() && _snowman.getInitialPosition() == this; --n) {
+            }
+            items.add(n + 1, item);
+            return n + 1;
+        }
+
+        public InsertionPosition inverse() {
+            return this == TOP ? BOTTOM : TOP;
+        }
+    }
+
+    @FunctionalInterface
+    public static interface Factory {
+        @Nullable
+        public ResourcePackProfile create(String var1, boolean var2, Supplier<ResourcePack> var3, ResourcePack var4, PackResourceMetadata var5, InsertionPosition var6, ResourcePackSource var7);
+    }
+}
+

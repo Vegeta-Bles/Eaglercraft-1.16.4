@@ -38,11 +38,11 @@ tasks.withType(JavaCompile).configureEach {
 sourceSets {
     main {
         java {
-            srcDir('decompiled')
+            srcDir('sources-yarn')
             exclude('META-INF/**')
         }
         resources {
-            srcDir('decompiled')
+            srcDir('sources-yarn')
             exclude('**/*.java')
         }
     }
@@ -50,24 +50,7 @@ sourceSets {
 
 repositories {
     mavenCentral()
-    exclusiveContent {
-        forRepository {
-            maven { url = uri('https://bmclapi2.bangbang93.com/maven/') }
-        }
-        filter {
-            includeGroup 'com.mojang'
-            includeModule 'oshi-project', 'oshi-core'
-            includeModule 'net.java.jinput', 'jinput'
-            includeModule 'net.java.jutils', 'jutils'
-            includeModule 'org.lwjgl', 'lwjgl'
-            includeModule 'org.lwjgl', 'lwjgl-jemalloc'
-            includeModule 'org.lwjgl', 'lwjgl-openal'
-            includeModule 'org.lwjgl', 'lwjgl-opengl'
-            includeModule 'org.lwjgl', 'lwjgl-glfw'
-            includeModule 'org.lwjgl', 'lwjgl-stb'
-            includeModule 'org.lwjgl', 'lwjgl-tinyfd'
-        }
-    }
+    maven { url = uri('https://bmclapi2.bangbang93.com/maven/') }
 }
 
 def versionManifest = file('1.16.4.json')

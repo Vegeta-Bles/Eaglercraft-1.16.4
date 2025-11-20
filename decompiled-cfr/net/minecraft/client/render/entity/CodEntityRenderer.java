@@ -1,0 +1,39 @@
+/*
+ * Decompiled with CFR 0.152.
+ */
+package net.minecraft.client.render.entity;
+
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
+import net.minecraft.client.render.entity.MobEntityRenderer;
+import net.minecraft.client.render.entity.model.CodEntityModel;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.util.math.Vector3f;
+import net.minecraft.entity.passive.CodEntity;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
+
+public class CodEntityRenderer
+extends MobEntityRenderer<CodEntity, CodEntityModel<CodEntity>> {
+    private static final Identifier TEXTURE = new Identifier("textures/entity/fish/cod.png");
+
+    public CodEntityRenderer(EntityRenderDispatcher entityRenderDispatcher) {
+        super(entityRenderDispatcher, new CodEntityModel(), 0.3f);
+    }
+
+    @Override
+    public Identifier getTexture(CodEntity codEntity) {
+        return TEXTURE;
+    }
+
+    @Override
+    protected void setupTransforms(CodEntity codEntity, MatrixStack matrixStack, float f, float f2, float f3) {
+        super.setupTransforms(codEntity, matrixStack, f, f2, f3);
+        _snowman = 4.3f * MathHelper.sin(0.6f * f);
+        matrixStack.multiply(Vector3f.POSITIVE_Y.getDegreesQuaternion(_snowman));
+        if (!codEntity.isTouchingWater()) {
+            matrixStack.translate(0.1f, 0.1f, -0.1f);
+            matrixStack.multiply(Vector3f.POSITIVE_Z.getDegreesQuaternion(90.0f));
+        }
+    }
+}
+

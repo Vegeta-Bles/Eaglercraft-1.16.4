@@ -1,0 +1,65 @@
+package net.minecraft.village;
+
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.util.registry.Registry;
+
+public class VillagerData {
+   private static final int[] LEVEL_BASE_EXPERIENCE = new int[]{0, 10, 70, 150, 250};
+   public static final Codec<VillagerData> CODEC = RecordCodecBuilder.create(
+      instance -> instance.group(
+               Registry.VILLAGER_TYPE.fieldOf("type").orElseGet(() -> VillagerType.PLAINS).forGetter(arg -> arg.type),
+               Registry.VILLAGER_PROFESSION.fieldOf("profession").orElseGet(() -> VillagerProfession.NONE).forGetter(arg -> arg.profession),
+               Codec.INT.fieldOf("level").orElse(1).forGetter(arg -> arg.level)
+            )
+            .apply(instance, VillagerData::new)
+   );
+   private final VillagerType type;
+   private final VillagerProfession profession;
+   private final int level;
+
+   public VillagerData(VillagerType arg, VillagerProfession arg2, int i) {
+      this.type = arg;
+      this.profession = arg2;
+      this.level = Math.max(1, i);
+   }
+
+   public VillagerType getType() {
+      return this.type;
+   }
+
+   public VillagerProfession getProfession() {
+      return this.profession;
+   }
+
+   public int getLevel() {
+      return this.level;
+   }
+
+   public VillagerData withType(VillagerType arg) {
+      return new VillagerData(arg, this.profession, this.level);
+   }
+
+   public VillagerData withProfession(VillagerProfession arg) {
+      return new VillagerData(this.type, arg, this.level);
+   }
+
+   public VillagerData withLevel(int level) {
+      return new VillagerData(this.type, this.profession, level);
+   }
+
+   @Environment(EnvType.CLIENT)
+   public static int getLowerLevelExperience(int level) {
+      return canLevelUp(level) ? LEVEL_BASE_EXPERIENCE[level - 1] : 0;
+   }
+
+   public static int getUpperLevelExperience(int level) {
+      return canLevelUp(level) ? LEVEL_BASE_EXPERIENCE[level] : 0;
+   }
+
+   public static boolean canLevelUp(int level) {
+      return level >= 1 && level < 5;
+   }
+}
